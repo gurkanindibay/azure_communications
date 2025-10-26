@@ -15,18 +15,42 @@ build/
 out/
 *.log
 
-# .NET
+# .NET build outputs
 bin/
 obj/
 *.user
 *.suo
-*.cache
-*.dll
-*.exe
-*.pdb
-*.DotSettings.user
-.vs/
-.vscode/settings.json
+*.userosscache
+*.sln.docstates
+
+# Frontend Node modules and build
+src/frontend/node_modules/
+src/frontend/dist/
+src/frontend/.env.local
+src/frontend/.env.*.local
+
+# Docker
+docker-compose.override.yml
+
+# Environment files
+.env
+.env.local
+.env.*.local
+
+# Logs
+logs/
+*.log
+
+# IDE
+.vscode/
+.idea/
+*.swp
+*.swo
+*~
+
+# OS
+.DS_Store
+Thumbs.db
 
 # Database
 *.db
