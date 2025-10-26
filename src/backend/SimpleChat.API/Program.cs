@@ -4,6 +4,7 @@ using SimpleChat.Application.Services;
 using SimpleChat.Core.Interfaces;
 using SimpleChat.Infrastructure.Data;
 using SimpleChat.Infrastructure.UnitOfWork;
+using SimpleChat.API.Hubs;
 
 var builder = WebApplication.CreateBuilder(args);
 
@@ -36,6 +37,9 @@ builder.Services.AddCors(options =>
 // Add Controllers
 builder.Services.AddControllers();
 
+// Add SignalR
+builder.Services.AddSignalR();
+
 // Add services to the container.
 // Learn more about configuring Swagger/OpenAPI at https://aka.ms/aspnetcore/swashbuckle
 builder.Services.AddEndpointsApiExplorer();
@@ -58,6 +62,7 @@ app.UseAuthentication();
 app.UseAuthorization();
 
 app.MapControllers();
+app.MapHub<ChatHub>("/hubs/chat");
 
 // Health check endpoint
 app.MapGet("/health", () => Results.Ok(new { status = "healthy", timestamp = DateTime.UtcNow }))

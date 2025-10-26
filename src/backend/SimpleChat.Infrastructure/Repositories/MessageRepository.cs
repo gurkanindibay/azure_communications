@@ -19,7 +19,7 @@ public class MessageRepository : Repository<Message>, IMessageRepository
             .Include(m => m.Sender)
             .Include(m => m.ReadReceipts)
             .Where(m => m.ChatThreadId == chatThreadId && !m.IsDeleted)
-            .OrderByDescending(m => m.SentAt)
+            .OrderBy(m => m.SentAt)
             .Skip(skip)
             .Take(pageSize)
             .ToListAsync();

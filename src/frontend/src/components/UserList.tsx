@@ -141,41 +141,38 @@ export const UserList: React.FC<UserListProps> = ({
                     </Badge>
                   </ListItemAvatar>
                   <ListItemText
-                    primary={
-                      <Box sx={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center' }}>
-                        <Typography variant="subtitle2">
-                          {thread.otherUser?.displayName}
-                        </Typography>
-                        {thread.unreadCount && thread.unreadCount > 0 && (
-                          <Chip
-                            label={thread.unreadCount}
-                            size="small"
-                            color="primary"
-                            sx={{ height: 20, minWidth: 20 }}
-                          />
-                        )}
-                      </Box>
-                    }
+                    primary={thread.otherUser?.displayName}
+                    primaryTypographyProps={{
+                      variant: 'subtitle2',
+                    }}
                     secondary={
-                      <Box>
-                        <Typography
-                          variant="body2"
-                          color="text.secondary"
-                          noWrap
-                          sx={{ maxWidth: '200px' }}
-                        >
-                          {thread.lastMessage?.content || 'No messages yet'}
-                        </Typography>
+                      <>
+                        {thread.lastMessage?.content || 'No messages yet'}
                         {thread.lastMessageAt && (
-                          <Typography variant="caption" color="text.secondary">
+                          <>
+                            {' • '}
                             {formatDistanceToNow(new Date(thread.lastMessageAt), {
                               addSuffix: true,
                             })}
-                          </Typography>
+                          </>
                         )}
-                      </Box>
+                      </>
                     }
+                    secondaryTypographyProps={{
+                      variant: 'body2',
+                      color: 'text.secondary',
+                      noWrap: true,
+                      sx: { maxWidth: '200px' },
+                    }}
                   />
+                  {thread.unreadCount && thread.unreadCount > 0 && (
+                    <Chip
+                      label={thread.unreadCount}
+                      size="small"
+                      color="primary"
+                      sx={{ height: 20, minWidth: 20, ml: 1 }}
+                    />
+                  )}
                 </ListItemButton>
               </ListItem>
             ))}

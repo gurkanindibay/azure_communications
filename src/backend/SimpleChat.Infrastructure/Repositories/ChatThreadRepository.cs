@@ -40,7 +40,7 @@ public class ChatThreadRepository : Repository<ChatThread>, IChatThreadRepositor
             .Include(ct => ct.User1)
             .Include(ct => ct.User2)
             .Include(ct => ct.Messages
-                .OrderByDescending(m => m.SentAt)
+                .OrderBy(m => m.SentAt)
                 .Skip(skip)
                 .Take(pageSize))
                 .ThenInclude(m => m.Sender)

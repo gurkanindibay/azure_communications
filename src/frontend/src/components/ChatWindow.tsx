@@ -1,4 +1,4 @@
-import React, { useState, useEffect, useRef } from 'react';
+import React, { useState, useEffect, useRef, useCallback } from 'react';
 import {
   Box,
   TextField,
@@ -14,6 +14,7 @@ import type { ChatThread, Message } from '../types';
 import { apiService } from '../services/api';
 import { useAuth } from '../contexts/AuthContext';
 import { MessageType } from '../types';
+import { useSignalRChat } from '../hooks/useChatClient';
 
 interface ChatWindowProps {
   thread: ChatThread | null;
@@ -27,6 +28,33 @@ export const ChatWindow: React.FC<ChatWindowProps> = ({ thread, onMessageSent })
   const [loading, setLoading] = useState(false);
   const [sending, setSending] = useState(false);
   const messagesEndRef = useRef<HTMLDivElement>(null);
+
+  // Handle incoming messages from SignalR
+  const handleMessageReceived = useCallback((message: Message) => {
+    console.log('New message received:', message);
+    
+    // Only add the message if it belongs to the current thread
+    if (thread && message.chatThreadId === thread.id) {
+      setMessages((prev) => {
+        // Avoid duplicates by checking if message already exists
+        const exists = prev.some((m) => m.id === message.id);
+        if (exists) return prev;
+        
+        return [...prev, message];
+      });
+      
+      // Mark as read if it's not from the current user
+      if (user && message.senderId !== user.id) {
+        apiService.markMessagesAsRead(message.chatThreadId, user.id).catch(console.error);
+      }
+    }
+  }, [thread, user]);
+
+  // Set up SignalR connection
+  useSignalRChat({
+    threadId: thread?.id,
+    onMessageReceived: handleMessageReceived,
+  });
 
   useEffect(() => {
     if (thread) {
@@ -76,13 +104,13 @@ export const ChatWindow: React.FC<ChatWindowProps> = ({ thread, onMessageSent })
 
     try {
       setSending(true);
-      const message = await apiService.sendMessage(user.id, {
+      await apiService.sendMessage(user.id, {
         chatThreadId: thread.id,
         content: newMessage.trim(),
         type: MessageType.Text,
       });
       
-      setMessages((prev) => [...prev, message]);
+      // No need to manually add message to state - SignalR will handle it
       setNewMessage('');
       onMessageSent?.();
     } catch (error) {
