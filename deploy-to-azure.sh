@@ -243,7 +243,8 @@ echo "Installing dotnet-ef tool..."
 dotnet tool install --global dotnet-ef || dotnet tool update --global dotnet-ef
 
 cd src/backend/SimpleChat.API
-dotnet ef database update --connection "$SQL_CONNECTION_STRING"
+# Try to run migrations, but don't fail if they already exist
+dotnet ef database update --connection "$SQL_CONNECTION_STRING" || echo "Database migrations may already be applied or connection failed. Continuing..."
 cd ../../..
 
 # Step 8: Build and push backend Docker image
@@ -403,6 +404,14 @@ fi
 BACKEND_ORIGIN_NAME="backend-aciorigin"
 if az afd origin show --profile-name $AFD_PROFILE_NAME --resource-group $RESOURCE_GROUP --origin-group-name $AFD_BACKEND_ORIGIN_GROUP --origin-name $BACKEND_ORIGIN_NAME > /dev/null 2>&1; then
   echo "Backend origin '$BACKEND_ORIGIN_NAME' already exists."
+  # Update the origin with the current backend FQDN
+  az afd origin update \
+    --profile-name $AFD_PROFILE_NAME \
+    --resource-group $RESOURCE_GROUP \
+    --origin-group-name $AFD_BACKEND_ORIGIN_GROUP \
+    --origin-name $BACKEND_ORIGIN_NAME \
+    --host-name $BACKEND_FQDN \
+    --origin-host-header $BACKEND_FQDN || true
 else
   echo "Creating origin for backend ACI: $BACKEND_FQDN"
   az afd origin create \
@@ -485,25 +494,43 @@ else
   FRONTEND_URL="https://${FRONT_DOOR_HOSTNAME}"
   echo "Front Door URL: $FRONTEND_URL"
   
-  # Update backend container with correct CORS origins now that we have the Front Door URL
-  echo "Updating backend container with CORS origins for Front Door..."
-  az container exec \
-    --resource-group $RESOURCE_GROUP \
-    --name $BACKEND_CONTAINER_NAME \
-    --exec-command "/bin/bash -c 'echo \"Updating CORS configuration...\"'" || true
+  # Recreate backend container with correct CORS origins now that we have the Front Door URL
+  echo "Recreating backend container with CORS origins for Front Door..."
   
-  # Set CORS allowed origins environment variable
-  az container update \
+  # Delete existing backend container
+  az container delete --resource-group $RESOURCE_GROUP --name $BACKEND_CONTAINER_NAME --yes || true
+  
+  # Recreate with CORS environment variables
+  echo "Deploying backend to Azure Container Instances with CORS configuration..."
+  az container create \
     --resource-group $RESOURCE_GROUP \
     --name $BACKEND_CONTAINER_NAME \
+    --os-type Linux \
+    --image ${ACR_LOGIN_SERVER}/simplechat-backend:latest \
+    --registry-login-server $ACR_LOGIN_SERVER \
+    --registry-username $ACR_USERNAME \
+    --registry-password "$ACR_PASSWORD" \
+    --dns-name-label $BACKEND_DNS_LABEL \
+    --ports 8080 \
+    --cpu 1 \
+    --memory 1.5 \
     --environment-variables \
+      ASPNETCORE_ENVIRONMENT=Production \
+      ASPNETCORE_URLS=http://+:8080 \
       Cors__AllowedOrigins__0="$FRONTEND_URL" \
       Cors__AllowedOrigins__1="http://localhost:5173" \
-      Cors__AllowedOrigins__2="http://localhost:3000" || true
-  
-  # Restart backend container to pick up new environment variables
-  echo "Restarting backend container to apply CORS changes..."
-  az container restart --resource-group $RESOURCE_GROUP --name $BACKEND_CONTAINER_NAME
+      Cors__AllowedOrigins__2="http://localhost:3000" \
+    --secure-environment-variables \
+      ConnectionStrings__DefaultConnection="$SQL_CONNECTION_STRING" \
+      AzureAd__TenantId=$AZURE_AD_TENANT_ID \
+      AzureAd__ClientId=$AZURE_AD_CLIENT_ID \
+      AzureCommunicationServices__ConnectionString="$ACS_CONNECTION_STRING" \
+    --output table
+
+  # Get backend FQDN
+  BACKEND_FQDN=$(az container show --resource-group $RESOURCE_GROUP --name $BACKEND_CONTAINER_NAME --query ipAddress.fqdn --output tsv)
+  BACKEND_URL="http://${BACKEND_FQDN}:8080"
+  echo "Backend URL: $BACKEND_URL"
 fi
 
 echo ""
