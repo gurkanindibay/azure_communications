@@ -254,6 +254,47 @@ dotnet ef database update --project ../SimpleChat.Infrastructure --startup-proje
 6. 🔄 Initialize React frontend
 7. 🔄 Implement chat UI
 
+## Azure Deployment
+
+### Deploy to Azure
+
+To deploy the application to Azure Container Instances with Azure Front Door:
+
+```bash
+# Make scripts executable
+chmod +x deploy-to-azure.sh
+chmod +x drop-resources.sh
+
+# Run deployment
+./deploy-to-azure.sh
+```
+
+The script will:
+1. Create resource group and SQL database
+2. Build and push Docker images to Azure Container Registry
+3. Deploy backend and frontend to Azure Container Instances
+4. Set up Azure Front Door for HTTPS termination and routing
+5. Configure CORS and update frontend with correct URLs
+
+### Cleanup Azure Resources
+
+To delete all Azure resources created by the deployment:
+
+```bash
+./drop-resources.sh
+```
+
+**Warning**: This will permanently delete the entire resource group and all resources within it.
+
+### Deployment Configuration
+
+Update the following variables in `deploy-to-azure.sh` if needed:
+- `RESOURCE_GROUP`: Azure resource group name
+- `LOCATION`: Azure region
+- `ACR_NAME`: Azure Container Registry name
+- `ACR_RESOURCE_GROUP`: Resource group containing the ACR
+- Azure AD and ACS connection details
+
 ## Resources
 
 - [ASP.NET Core Documentation](https://docs.microsoft.com/aspnet/core)

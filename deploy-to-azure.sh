@@ -21,7 +21,7 @@ KEY_VAULT_NAME="kv-simplechat-demo-2025"
 BACKEND_DNS_LABEL="simplechat-backend-$(date +%s | tail -c 6)"
 
 # Front Door settings
-AFD_PROFILE_NAME="simplechat-afd-$(date +%s | tail -c 6)"
+AFD_PROFILE_NAME="simplechat-afd"
 AFD_ENDPOINT_NAME="simplechat-endpoint"
 AFD_ORIGIN_GROUP="simplechat-origin-group"
 AFD_BACKEND_ORIGIN_GROUP="simplechat-backend-origin-group"
@@ -172,7 +172,7 @@ echo "ACR Login Server: $ACR_LOGIN_SERVER"
 
 # Step 4: Build and push backend Docker image
 echo ""
-echo "Step 5: Building and pushing backend Docker image..."
+echo "Step 4: Building and pushing backend Docker image..."
 cd src/backend
 if [ "$BUILD_BACKEND" = "true" ]; then
   az acr build \
@@ -187,7 +187,7 @@ cd ../..
 
 echo ""
 echo ""
-echo "Step 5a: Skipping Key Vault / certificate generation (using Front Door TLS termination and HttpOnly origins)."
+echo "Step 5: Skipping Key Vault / certificate generation (using Front Door TLS termination and HttpOnly origins)."
 echo "If you later want origin TLS, re-enable Key Vault cert creation or import a CA-signed PFX into Key Vault."
 
 # Step 6: Deploy Backend to Azure Container Instances
@@ -247,22 +247,24 @@ cd src/backend/SimpleChat.API
 dotnet ef database update --connection "$SQL_CONNECTION_STRING" || echo "Database migrations may already be applied or connection failed. Continuing..."
 cd ../../..
 
-# Step 8: Build and push backend Docker image
+# Step 8: Build and push frontend Docker image
 echo ""
-echo "Step 8: Building and pushing backend Docker image..."
-cd src/backend
-if [ "$BUILD_BACKEND" = "true" ]; then
+echo "Step 8: Building and pushing frontend Docker image..."
+cd src/frontend
+if [ "$BUILD_FRONTEND" = "true" ]; then
   az acr build \
     --registry $ACR_NAME \
-    --image simplechat-backend:latest \
-    --file SimpleChat.API/Dockerfile \
+    --image simplechat-frontend:latest \
+    --build-arg VITE_API_BASE_URL="http://localhost:8080/api" \
+    --build-arg VITE_API_URL="http://localhost:8080" \
+    --build-arg VITE_AZURE_AD_CLIENT_ID=$AZURE_AD_CLIENT_ID \
+    --build-arg VITE_AZURE_AD_TENANT_ID=$AZURE_AD_TENANT_ID \
+    --build-arg VITE_AZURE_AD_REDIRECT_URI="http://localhost:5173" \
     .
 else
-  echo "Skipping backend image build (per flags)."
+  echo "Skipping frontend image build (per flags)."
 fi
 cd ../..
-
-# Step 9: Deploy Backend to Azure Container Instances
 
 # Step 9: Deploy Frontend to Azure Container Instances
 echo ""
@@ -282,7 +284,7 @@ else
     --registry-username $ACR_USERNAME \
     --registry-password "$ACR_PASSWORD" \
     --dns-name-label simplechat-frontend-$(date +%s | tail -c 6) \
-  --ports 80 \
+    --ports 80 \
     --cpu 0.5 \
     --memory 1 \
     --output table
@@ -290,7 +292,7 @@ else
   # Get frontend FQDN
   FRONTEND_FQDN=$(az container show --resource-group $RESOURCE_GROUP --name $FRONTEND_CONTAINER_NAME --query ipAddress.fqdn --output tsv)
 fi
-  FRONTEND_URL="https://${FRONT_DOOR_HOSTNAME}"
+FRONTEND_URL="http://${FRONTEND_FQDN}"
 
 # -----------------------------------------------------------------------------
 # Step 10: Create Azure Front Door (Standard/Premium) profile and route to ACI
@@ -304,187 +306,147 @@ echo ""
 echo "Step 10: Creating Azure Front Door profile and routing to frontend ACI..."
 
 if az afd profile show --name $AFD_PROFILE_NAME --resource-group $RESOURCE_GROUP > /dev/null 2>&1; then
-  echo "Front Door profile '$AFD_PROFILE_NAME' already exists. Skipping profile creation."
-else
-  echo "Creating Front Door profile: $AFD_PROFILE_NAME"
-  az afd profile create \
-    --resource-group $RESOURCE_GROUP \
-    --name $AFD_PROFILE_NAME \
-    --sku Standard_AzureFrontDoor \
-    --output table
+  echo "Front Door profile '$AFD_PROFILE_NAME' already exists. Deleting it to recreate with updated configuration."
+  az afd profile delete --name $AFD_PROFILE_NAME --resource-group $RESOURCE_GROUP --yes
 fi
 
-if az afd endpoint show --profile-name $AFD_PROFILE_NAME --name $AFD_ENDPOINT_NAME --resource-group $RESOURCE_GROUP > /dev/null 2>&1; then
-  echo "Front Door endpoint '$AFD_ENDPOINT_NAME' already exists. Skipping endpoint creation."
-else
-  echo "Creating Front Door endpoint: $AFD_ENDPOINT_NAME"
-  # Try to create the endpoint; if the name is globally unavailable (conflict),
-  # try again with a short timestamp suffix to get an available name.
-  set +e
+echo "Creating Front Door profile: $AFD_PROFILE_NAME"
+az afd profile create \
+  --resource-group $RESOURCE_GROUP \
+  --name $AFD_PROFILE_NAME \
+  --sku Standard_AzureFrontDoor \
+  --output table
+
+echo "Creating Front Door endpoint: $AFD_ENDPOINT_NAME"
+# Try to create the endpoint; if the name is globally unavailable (conflict),
+# try again with a short timestamp suffix to get an available name.
+set +e
+az afd endpoint create \
+  --profile-name $AFD_PROFILE_NAME \
+  --resource-group $RESOURCE_GROUP \
+  --name $AFD_ENDPOINT_NAME \
+  --output table
+rc=$?
+set -e
+if [ $rc -ne 0 ]; then
+  echo "Endpoint name '$AFD_ENDPOINT_NAME' unavailable (conflict). Generating fallback name."
+  SUFFIX=$(date +%s | tail -c 4)
+  AFD_ENDPOINT_NAME="${AFD_ENDPOINT_NAME}-${SUFFIX}"
+  echo "Retrying create with endpoint name: $AFD_ENDPOINT_NAME"
   az afd endpoint create \
     --profile-name $AFD_PROFILE_NAME \
     --resource-group $RESOURCE_GROUP \
     --name $AFD_ENDPOINT_NAME \
     --output table
-  rc=$?
-  set -e
-  if [ $rc -ne 0 ]; then
-    echo "Endpoint name '$AFD_ENDPOINT_NAME' unavailable (conflict). Generating fallback name."
-    SUFFIX=$(date +%s | tail -c 4)
-    AFD_ENDPOINT_NAME="${AFD_ENDPOINT_NAME}-${SUFFIX}"
-    echo "Retrying create with endpoint name: $AFD_ENDPOINT_NAME"
-    az afd endpoint create \
-      --profile-name $AFD_PROFILE_NAME \
-      --resource-group $RESOURCE_GROUP \
-      --name $AFD_ENDPOINT_NAME \
-      --output table
-  fi
 fi
 
 # Create origin group
-if az afd origin-group show --profile-name $AFD_PROFILE_NAME --resource-group $RESOURCE_GROUP --origin-group-name $AFD_ORIGIN_GROUP > /dev/null 2>&1; then
-  echo "Origin group '$AFD_ORIGIN_GROUP' already exists."
-else
-  echo "Creating origin group: $AFD_ORIGIN_GROUP"
-  az afd origin-group create \
-    --profile-name $AFD_PROFILE_NAME \
-    --resource-group $RESOURCE_GROUP \
-    --origin-group-name $AFD_ORIGIN_GROUP \
-    --enable-health-probe true \
-    --probe-interval-in-seconds 30 \
-    --probe-path /health \
-    --probe-protocol Http \
-    --probe-request-type GET \
-    --sample-size 4 \
-    --successful-samples-required 2 \
-    --additional-latency-in-milliseconds 0 || true
-    \
-fi
+echo "Creating origin group: $AFD_ORIGIN_GROUP"
+az afd origin-group create \
+  --profile-name $AFD_PROFILE_NAME \
+  --resource-group $RESOURCE_GROUP \
+  --origin-group-name $AFD_ORIGIN_GROUP \
+  --enable-health-probe true \
+  --probe-interval-in-seconds 30 \
+  --probe-path /health \
+  --probe-protocol Http \
+  --probe-request-type GET \
+  --sample-size 4 \
+  --successful-samples-required 2 \
+  --additional-latency-in-milliseconds 0 || true
 
 # Add frontend ACI as an origin (use HttpOnly between Front Door and ACI to avoid backend TLS requirement)
 ORIGIN_NAME="frontend-aciorigin"
-if az afd origin show --profile-name $AFD_PROFILE_NAME --resource-group $RESOURCE_GROUP --origin-group-name $AFD_ORIGIN_GROUP --origin-name $ORIGIN_NAME > /dev/null 2>&1; then
-  echo "Origin '$ORIGIN_NAME' already exists."
-else
-  echo "Creating origin for frontend ACI: $FRONTEND_FQDN"
-  az afd origin create \
-    --profile-name $AFD_PROFILE_NAME \
-    --resource-group $RESOURCE_GROUP \
-    --origin-group-name $AFD_ORIGIN_GROUP \
-    --origin-name $ORIGIN_NAME \
-    --host-name $FRONTEND_FQDN \
-    --http-port 80 \
-    --https-port 443 \
-    --origin-host-header $FRONTEND_FQDN \
-    --priority 1 \
-    --weight 100 \
-    --enabled-state Enabled \
-    --output table || true
-fi
+echo "Creating origin for frontend ACI: $FRONTEND_FQDN"
+az afd origin create \
+  --profile-name $AFD_PROFILE_NAME \
+  --resource-group $RESOURCE_GROUP \
+  --origin-group-name $AFD_ORIGIN_GROUP \
+  --origin-name $ORIGIN_NAME \
+  --host-name $FRONTEND_FQDN \
+  --http-port 80 \
+  --https-port 443 \
+  --origin-host-header $FRONTEND_FQDN \
+  --priority 1 \
+  --weight 100 \
+  --enabled-state Enabled \
+  --output table || true
 
 # Create backend origin group and origin (for API traffic) - use HttpOnly (Front Door -> origin over HTTP)
-if az afd origin-group show --profile-name $AFD_PROFILE_NAME --resource-group $RESOURCE_GROUP --origin-group-name $AFD_BACKEND_ORIGIN_GROUP > /dev/null 2>&1; then
-  echo "Backend origin group '$AFD_BACKEND_ORIGIN_GROUP' already exists."
-else
-  echo "Creating backend origin group: $AFD_BACKEND_ORIGIN_GROUP"
-  az afd origin-group create \
-    --profile-name $AFD_PROFILE_NAME \
-    --resource-group $RESOURCE_GROUP \
-    --origin-group-name $AFD_BACKEND_ORIGIN_GROUP \
-    --enable-health-probe true \
-    --probe-interval-in-seconds 30 \
-    --probe-path /health \
-    --probe-protocol Http \
-    --probe-request-type GET \
-    --sample-size 4 \
-    --successful-samples-required 2 \
-    --additional-latency-in-milliseconds 0 || true
-fi
+echo "Creating backend origin group: $AFD_BACKEND_ORIGIN_GROUP"
+az afd origin-group create \
+  --profile-name $AFD_PROFILE_NAME \
+  --resource-group $RESOURCE_GROUP \
+  --origin-group-name $AFD_BACKEND_ORIGIN_GROUP \
+  --enable-health-probe true \
+  --probe-interval-in-seconds 30 \
+  --probe-path /health \
+  --probe-protocol Http \
+  --probe-request-type GET \
+  --sample-size 4 \
+  --successful-samples-required 2 \
+  --additional-latency-in-milliseconds 0 || true
 
 BACKEND_ORIGIN_NAME="backend-aciorigin"
-if az afd origin show --profile-name $AFD_PROFILE_NAME --resource-group $RESOURCE_GROUP --origin-group-name $AFD_BACKEND_ORIGIN_GROUP --origin-name $BACKEND_ORIGIN_NAME > /dev/null 2>&1; then
-  echo "Backend origin '$BACKEND_ORIGIN_NAME' already exists."
-  # Update the origin with the current backend FQDN
-  az afd origin update \
-    --profile-name $AFD_PROFILE_NAME \
-    --resource-group $RESOURCE_GROUP \
-    --origin-group-name $AFD_BACKEND_ORIGIN_GROUP \
-    --origin-name $BACKEND_ORIGIN_NAME \
-    --host-name $BACKEND_FQDN \
-    --origin-host-header $BACKEND_FQDN || true
-else
-  echo "Creating origin for backend ACI: $BACKEND_FQDN"
-  az afd origin create \
-    --profile-name $AFD_PROFILE_NAME \
-    --resource-group $RESOURCE_GROUP \
-    --origin-group-name $AFD_BACKEND_ORIGIN_GROUP \
-    --origin-name $BACKEND_ORIGIN_NAME \
-    --host-name $BACKEND_FQDN \
-    --http-port 8080 \
-    --https-port 443 \
-    --origin-host-header $BACKEND_FQDN \
-    --priority 1 \
-    --weight 100 \
-    --enabled-state Enabled \
-    --output table || true
-fi
+echo "Creating origin for backend ACI: $BACKEND_FQDN"
+az afd origin create \
+  --profile-name $AFD_PROFILE_NAME \
+  --resource-group $RESOURCE_GROUP \
+  --origin-group-name $AFD_BACKEND_ORIGIN_GROUP \
+  --origin-name $BACKEND_ORIGIN_NAME \
+  --host-name $BACKEND_FQDN \
+  --http-port 8080 \
+  --https-port 443 \
+  --origin-host-header $BACKEND_FQDN \
+  --priority 1 \
+  --weight 100 \
+  --enabled-state Enabled \
+  --output table || true
 
 # Create a route for API traffic that maps /api/* to backend origin group (HTTP origin)
 API_ROUTE_NAME="api-route"
-if az afd route show --profile-name $AFD_PROFILE_NAME --resource-group $RESOURCE_GROUP --endpoint-name $AFD_ENDPOINT_NAME --name $API_ROUTE_NAME > /dev/null 2>&1; then
-  echo "Route '$API_ROUTE_NAME' already exists."
-else
-  echo "Creating route '$API_ROUTE_NAME' to origin group '$AFD_BACKEND_ORIGIN_GROUP'"
-  az afd route create \
-    --profile-name $AFD_PROFILE_NAME \
-    --resource-group $RESOURCE_GROUP \
-    --endpoint-name $AFD_ENDPOINT_NAME \
-    --name $API_ROUTE_NAME \
-    --origin-group $AFD_BACKEND_ORIGIN_GROUP \
-    --patterns-to-match '/api/*' \
-    --supported-protocols Http Https \
-    --forwarding-protocol HttpOnly \
-    --link-to-default-domain Enabled \
-    --output table || true
-fi
+echo "Creating route '$API_ROUTE_NAME' to origin group '$AFD_BACKEND_ORIGIN_GROUP'"
+az afd route create \
+  --profile-name $AFD_PROFILE_NAME \
+  --resource-group $RESOURCE_GROUP \
+  --endpoint-name $AFD_ENDPOINT_NAME \
+  --name $API_ROUTE_NAME \
+  --origin-group $AFD_BACKEND_ORIGIN_GROUP \
+  --patterns-to-match '/api/*' \
+  --supported-protocols Http Https \
+  --forwarding-protocol HttpOnly \
+  --link-to-default-domain Enabled \
+  --output table || true
 
 # Create a route for SignalR hub traffic that maps /hubs/* to backend origin group (HTTP origin)
 HUBS_ROUTE_NAME="hubs-route"
-if az afd route show --profile-name $AFD_PROFILE_NAME --resource-group $RESOURCE_GROUP --endpoint-name $AFD_ENDPOINT_NAME --name $HUBS_ROUTE_NAME > /dev/null 2>&1; then
-  echo "Route '$HUBS_ROUTE_NAME' already exists."
-else
-  echo "Creating route '$HUBS_ROUTE_NAME' to origin group '$AFD_BACKEND_ORIGIN_GROUP'"
-  az afd route create \
-    --profile-name $AFD_PROFILE_NAME \
-    --resource-group $RESOURCE_GROUP \
-    --endpoint-name $AFD_ENDPOINT_NAME \
-    --name $HUBS_ROUTE_NAME \
-    --origin-group $AFD_BACKEND_ORIGIN_GROUP \
-    --patterns-to-match '/hubs/*' \
-    --supported-protocols Http Https \
-    --forwarding-protocol HttpOnly \
-    --link-to-default-domain Enabled \
-    --output table || true
-fi
+echo "Creating route '$HUBS_ROUTE_NAME' to origin group '$AFD_BACKEND_ORIGIN_GROUP'"
+az afd route create \
+  --profile-name $AFD_PROFILE_NAME \
+  --resource-group $RESOURCE_GROUP \
+  --endpoint-name $AFD_ENDPOINT_NAME \
+  --name $HUBS_ROUTE_NAME \
+  --origin-group $AFD_BACKEND_ORIGIN_GROUP \
+  --patterns-to-match '/hubs/*' \
+  --supported-protocols Http Https \
+  --forwarding-protocol HttpOnly \
+  --link-to-default-domain Enabled \
+  --output table || true
 
 # Create a default route that maps all requests to the origin group
 ROUTE_NAME="default-route"
-if az afd route show --profile-name $AFD_PROFILE_NAME --resource-group $RESOURCE_GROUP --endpoint-name $AFD_ENDPOINT_NAME --name $ROUTE_NAME > /dev/null 2>&1; then
-  echo "Route '$ROUTE_NAME' already exists."
-else
-  echo "Creating route '$ROUTE_NAME' to origin group '$AFD_ORIGIN_GROUP'"
-  az afd route create \
-    --profile-name $AFD_PROFILE_NAME \
-    --resource-group $RESOURCE_GROUP \
-    --endpoint-name $AFD_ENDPOINT_NAME \
-    --name $ROUTE_NAME \
-    --origin-group $AFD_ORIGIN_GROUP \
-    --patterns-to-match '/*' \
-    --supported-protocols Http Https \
-    --forwarding-protocol HttpOnly \
-    --link-to-default-domain Enabled \
-    --output table || true
-fi
+echo "Creating route '$ROUTE_NAME' to origin group '$AFD_ORIGIN_GROUP'"
+az afd route create \
+  --profile-name $AFD_PROFILE_NAME \
+  --resource-group $RESOURCE_GROUP \
+  --endpoint-name $AFD_ENDPOINT_NAME \
+  --name $ROUTE_NAME \
+  --origin-group $AFD_ORIGIN_GROUP \
+  --patterns-to-match '/*' \
+  --supported-protocols Http Https \
+  --forwarding-protocol HttpOnly \
+  --link-to-default-domain Enabled \
+  --output table || true
 
 # Get Front Door generated hostname (e.g. <endpoint>.azurefd.net)
 FRONT_DOOR_HOSTNAME=$(az afd endpoint show --profile-name $AFD_PROFILE_NAME --resource-group $RESOURCE_GROUP --name $AFD_ENDPOINT_NAME --query hostName --output tsv 2>/dev/null || true)
@@ -533,8 +495,9 @@ else
   echo "Backend URL: $BACKEND_URL"
 fi
 
+# Step 11: Rebuild frontend Docker image with correct API URLs
 echo ""
-echo "Step 9: Build and push frontend Docker image with correct API URLs..."
+echo "Step 11: Building and pushing frontend Docker image with correct API URLs..."
 
 cd src/frontend
 if [ "$BUILD_FRONTEND" = "true" ]; then
@@ -552,7 +515,9 @@ else
 fi
 cd ../..
 
-# Restart frontend container to pick up new image
+# Step 12: Restart frontend container to pick up new image
+echo ""
+echo "Step 12: Restarting frontend container to pick up new image..."
 az container restart --resource-group $RESOURCE_GROUP --name $FRONTEND_CONTAINER_NAME
 
 echo ""
