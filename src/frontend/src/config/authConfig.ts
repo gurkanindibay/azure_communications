@@ -15,6 +15,8 @@ export const msalConfig: Configuration = {
     iframeHashTimeout: 6000,
     loadFrameTimeout: 0,
     asyncPopups: false,
+    // @ts-ignore
+    allowInsecureHttpRequests: true, // Allow HTTP for demo purposes
   },
 };
 

@@ -7,38 +7,24 @@ using SimpleChat.Core.Interfaces;
 using SimpleChat.Infrastructure.Data;
 using SimpleChat.Infrastructure.UnitOfWork;
 using SimpleChat.API.Hubs;
-using Azure.Identity;
-using Azure.Security.KeyVault.Secrets;
-using Azure.Extensions.AspNetCore.Configuration.Secrets;
 using AspNetCoreRateLimit;
 using Serilog;
 using System.IdentityModel.Tokens.Jwt;
 
-// Configure Serilog
-Log.Logger = new LoggerConfiguration()
-    .WriteTo.Console()
-    .WriteTo.File("logs/simplechat-.txt", rollingInterval: RollingInterval.Day)
-    .CreateLogger();
-
-try
-{
-    Log.Information("Starting SimpleChat API");
-
-    var builder = WebApplication.CreateBuilder(args);
-
     // Configure Serilog
-    builder.Host.UseSerilog();
+    Log.Logger = new LoggerConfiguration()
+        .WriteTo.Console()
+        .WriteTo.File("logs/simplechat-.txt", rollingInterval: RollingInterval.Day)
+        .CreateLogger();
 
-    // Configure Azure Key Vault
-    var keyVaultName = builder.Configuration["KeyVault:Name"] ?? "kv-simplechat-93165";
-    var keyVaultUri = new Uri($"https://{keyVaultName}.vault.azure.net/");
+    try
+    {
+        Log.Information("Starting SimpleChat API");
 
-    builder.Configuration.AddAzureKeyVault(
-        keyVaultUri,
-        new DefaultAzureCredential(),
-        new KeyVaultSecretManager());
+        var builder = WebApplication.CreateBuilder(args);
 
-    // Add Database Context
+        // Configure Serilog
+        builder.Host.UseSerilog();    // Add Database Context
     builder.Services.AddDbContext<SimpleChatDbContext>(options =>
         options.UseSqlServer(builder.Configuration.GetConnectionString("DefaultConnection")));
 
@@ -59,40 +45,43 @@ try
     // Configure Authentication
     JwtSecurityTokenHandler.DefaultMapInboundClaims = false;
     
-    builder.Services.AddAuthentication(JwtBearerDefaults.AuthenticationScheme)
-        .AddJwtBearer(options =>
-        {
-            var tenantId = builder.Configuration["AzureAd:TenantId"];
-            var clientId = builder.Configuration["AzureAd:ClientId"];
-            
-            options.Authority = $"https://login.microsoftonline.com/{tenantId}/v2.0";
-            options.TokenValidationParameters = new Microsoft.IdentityModel.Tokens.TokenValidationParameters
+    var tenantId = builder.Configuration["AzureAd:TenantId"];
+    var clientId = builder.Configuration["AzureAd:ClientId"];
+    
+    if (!string.IsNullOrEmpty(tenantId) && !string.IsNullOrEmpty(clientId))
+    {
+        builder.Services.AddAuthentication(JwtBearerDefaults.AuthenticationScheme)
+            .AddJwtBearer(options =>
             {
-                ValidateIssuer = true,
-                ValidateAudience = false, // ID tokens don't have API audience
-                ValidateLifetime = true,
-                ValidateIssuerSigningKey = true,
-                NameClaimType = "name",
-                RoleClaimType = "roles"
-            };
-            
-            options.Events = new JwtBearerEvents
-            {
-                OnMessageReceived = context =>
+                options.Authority = $"https://login.microsoftonline.com/{tenantId}/v2.0";
+                options.TokenValidationParameters = new Microsoft.IdentityModel.Tokens.TokenValidationParameters
                 {
-                    var accessToken = context.Request.Query["access_token"];
-                    var path = context.HttpContext.Request.Path;
-                    
-                    // If accessing SignalR hub, get token from query string
-                    if (!string.IsNullOrEmpty(accessToken) && path.StartsWithSegments("/hubs"))
+                    ValidateIssuer = true,
+                    ValidateAudience = false, // ID tokens don't have API audience
+                    ValidateLifetime = true,
+                    ValidateIssuerSigningKey = true,
+                    NameClaimType = "name",
+                    RoleClaimType = "roles"
+                };
+                
+                options.Events = new JwtBearerEvents
+                {
+                    OnMessageReceived = context =>
                     {
-                        context.Token = accessToken;
+                        var accessToken = context.Request.Query["access_token"];
+                        var path = context.HttpContext.Request.Path;
+                        
+                        // If accessing SignalR hub, get token from query string
+                        if (!string.IsNullOrEmpty(accessToken) && path.StartsWithSegments("/hubs"))
+                        {
+                            context.Token = accessToken;
+                        }
+                        
+                        return Task.CompletedTask;
                     }
-                    
-                    return Task.CompletedTask;
-                }
-            };
-        });
+                };
+            });
+    }
 
     // Add Authorization
     builder.Services.AddAuthorization();
