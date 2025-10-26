@@ -12,8 +12,12 @@ import type {
 
 const API_BASE_URL = import.meta.env.VITE_API_BASE_URL || 'http://localhost:5071/api';
 
+// Type for token getter function
+type TokenGetter = () => Promise<string | null>;
+
 class ApiService {
   private client: AxiosInstance;
+  private getAccessToken: TokenGetter | null = null;
 
   constructor() {
     this.client = axios.create({
@@ -25,10 +29,16 @@ class ApiService {
 
     // Request interceptor for adding auth token
     this.client.interceptors.request.use(
-      (config) => {
-        const token = sessionStorage.getItem('authToken');
-        if (token) {
-          config.headers.Authorization = `Bearer ${token}`;
+      async (config) => {
+        try {
+          if (this.getAccessToken) {
+            const token = await this.getAccessToken();
+            if (token) {
+              config.headers.Authorization = `Bearer ${token}`;
+            }
+          }
+        } catch (error) {
+          console.error('Error getting access token:', error);
         }
         return config;
       },
@@ -40,12 +50,16 @@ class ApiService {
       (response) => response,
       (error: AxiosError) => {
         if (error.response?.status === 401) {
-          // Handle unauthorized - redirect to login
-          window.location.href = '/login';
+          console.error('Unauthorized request - token may be invalid or expired');
         }
         return Promise.reject(error);
       }
     );
+  }
+
+  // Method to set the token getter function
+  setTokenGetter(getter: TokenGetter) {
+    this.getAccessToken = getter;
   }
 
   // User endpoints

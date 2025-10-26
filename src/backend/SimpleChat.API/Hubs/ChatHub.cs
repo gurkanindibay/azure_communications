@@ -1,7 +1,9 @@
 using Microsoft.AspNetCore.SignalR;
+using Microsoft.AspNetCore.Authorization;
 
 namespace SimpleChat.API.Hubs;
 
+[Authorize]
 public class ChatHub : Hub
 {
     public async Task SendMessage(string threadId, string message)

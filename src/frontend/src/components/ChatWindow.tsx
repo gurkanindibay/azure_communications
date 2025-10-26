@@ -10,6 +10,7 @@ import {
 } from '@mui/material';
 import { Send as SendIcon } from '@mui/icons-material';
 import { formatDistanceToNow } from 'date-fns';
+import { useMsal } from '@azure/msal-react';
 import type { ChatThread, Message } from '../types';
 import { apiService } from '../services/api';
 import { useAuth } from '../contexts/AuthContext';
@@ -23,11 +24,38 @@ interface ChatWindowProps {
 
 export const ChatWindow: React.FC<ChatWindowProps> = ({ thread, onMessageSent }) => {
   const { user } = useAuth();
+  const { instance, accounts } = useMsal();
   const [messages, setMessages] = useState<Message[]>([]);
   const [newMessage, setNewMessage] = useState('');
   const [loading, setLoading] = useState(false);
   const [sending, setSending] = useState(false);
   const messagesEndRef = useRef<HTMLDivElement>(null);
+
+  // Function to get access token for SignalR
+  const getAccessToken = useCallback(async (): Promise<string | null> => {
+    const account = accounts[0];
+    if (!account) return null;
+    
+    try {
+      const response = await instance.acquireTokenSilent({
+        scopes: ['openid', 'profile', 'email'],
+        account: account,
+      });
+      return response.idToken;
+    } catch (error) {
+      console.error('Error acquiring token for SignalR:', error);
+      try {
+        const response = await instance.acquireTokenPopup({
+          scopes: ['openid', 'profile', 'email'],
+          account: account,
+        });
+        return response.idToken;
+      } catch (popupError) {
+        console.error('Error acquiring token via popup for SignalR:', popupError);
+        return null;
+      }
+    }
+  }, [instance, accounts]);
 
   // Handle incoming messages from SignalR
   const handleMessageReceived = useCallback((message: Message) => {
@@ -54,6 +82,7 @@ export const ChatWindow: React.FC<ChatWindowProps> = ({ thread, onMessageSent })
   useSignalRChat({
     threadId: thread?.id,
     onMessageReceived: handleMessageReceived,
+    getAccessToken,
   });
 
   useEffect(() => {

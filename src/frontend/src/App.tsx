@@ -7,6 +7,7 @@ import { msalConfig } from './config/authConfig';
 import { AuthProvider, useAuth } from './contexts/AuthContext';
 import { LoginPage } from './pages/LoginPage';
 import { ChatPage } from './pages/ChatPage';
+import { DebugAuth } from './components/DebugAuth';
 
 const msalInstance = new PublicClientApplication(msalConfig);
 
@@ -35,6 +36,7 @@ const AppRoutes: React.FC = () => {
   return (
     <Routes>
       <Route path="/login" element={<LoginPage />} />
+      <Route path="/debug" element={<DebugAuth />} />
       <Route
         path="/"
         element={

@@ -5,9 +5,10 @@ import type { Message } from '../types';
 interface UseSignalRChatOptions {
   threadId?: string;
   onMessageReceived?: (message: Message) => void;
+  getAccessToken?: () => Promise<string | null>;
 }
 
-export const useSignalRChat = ({ threadId, onMessageReceived }: UseSignalRChatOptions) => {
+export const useSignalRChat = ({ threadId, onMessageReceived, getAccessToken }: UseSignalRChatOptions) => {
   const [connection, setConnection] = useState<signalR.HubConnection | null>(null);
   const [isConnected, setIsConnected] = useState(false);
   const [error, setError] = useState<Error | null>(null);
@@ -20,7 +21,14 @@ export const useSignalRChat = ({ threadId, onMessageReceived }: UseSignalRChatOp
       const newConnection = new signalR.HubConnectionBuilder()
         .withUrl(`${apiUrl}/hubs/chat`, {
           skipNegotiation: false,
-          transport: signalR.HttpTransportType.WebSockets | signalR.HttpTransportType.ServerSentEvents | signalR.HttpTransportType.LongPolling
+          transport: signalR.HttpTransportType.WebSockets | signalR.HttpTransportType.ServerSentEvents | signalR.HttpTransportType.LongPolling,
+          accessTokenFactory: async () => {
+            if (getAccessToken) {
+              const token = await getAccessToken();
+              return token || '';
+            }
+            return '';
+          }
         })
         .withAutomaticReconnect()
         .configureLogging(signalR.LogLevel.Information)
@@ -72,7 +80,7 @@ export const useSignalRChat = ({ threadId, onMessageReceived }: UseSignalRChatOp
       setIsConnected(false);
       return null;
     }
-  }, [onMessageReceived]);
+  }, [onMessageReceived, getAccessToken]);
 
   // Join thread group when threadId changes
   useEffect(() => {

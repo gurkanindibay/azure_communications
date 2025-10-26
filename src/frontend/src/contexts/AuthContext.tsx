@@ -24,6 +24,36 @@ export const AuthProvider: React.FC<{ children: React.ReactNode }> = ({ children
   const account = accounts[0] || null;
   const isAuthenticated = !!account;
 
+  // Set up token getter for API service
+  useEffect(() => {
+    const getAccessToken = async (): Promise<string | null> => {
+      if (!account) return null;
+      
+      try {
+        const response = await instance.acquireTokenSilent({
+          scopes: ['openid', 'profile', 'email'],
+          account: account,
+        });
+        return response.idToken;
+      } catch (error) {
+        console.error('Error acquiring token:', error);
+        try {
+          // If silent token acquisition fails, try interactive
+          const response = await instance.acquireTokenPopup({
+            scopes: ['openid', 'profile', 'email'],
+            account: account,
+          });
+          return response.idToken;
+        } catch (popupError) {
+          console.error('Error acquiring token via popup:', popupError);
+          return null;
+        }
+      }
+    };
+
+    apiService.setTokenGetter(getAccessToken);
+  }, [account, instance]);
+
   useEffect(() => {
     if (isAuthenticated && account) {
       initializeUser();
@@ -45,17 +75,26 @@ export const AuthProvider: React.FC<{ children: React.ReactNode }> = ({ children
         
         // Update online status
         await apiService.updateOnlineStatus(existingUser.id, true);
-      } catch (error) {
-        // User doesn't exist, create new user
-        const newUser = await apiService.createUser({
-          entraIdObjectId: account.localAccountId,
-          email: account.username,
-          displayName: account.name || account.username,
-        });
-        setUser(newUser);
+      } catch (error: any) {
+        console.log('User not found or error fetching user:', error.response?.status);
+        
+        // Only try to create user if it's a 404 (not found)
+        if (error.response?.status === 404) {
+          const newUser = await apiService.createUser({
+            entraIdObjectId: account.localAccountId,
+            email: account.username,
+            displayName: account.name || account.username,
+          });
+          setUser(newUser);
+        } else {
+          // For other errors (like 401), don't try to create user
+          console.error('Error initializing user:', error);
+          throw error;
+        }
       }
     } catch (error) {
-      console.error('Error initializing user:', error);
+      console.error('Fatal error initializing user:', error);
+      // Don't set user if there's an error, but don't prevent loading completion
     } finally {
       setIsLoading(false);
     }

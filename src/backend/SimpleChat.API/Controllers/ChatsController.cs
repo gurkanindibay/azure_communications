@@ -1,5 +1,6 @@
 using Microsoft.AspNetCore.Mvc;
 using Microsoft.AspNetCore.SignalR;
+using Microsoft.AspNetCore.Authorization;
 using SimpleChat.Application.DTOs;
 using SimpleChat.Application.Interfaces;
 using SimpleChat.API.Hubs;
@@ -9,6 +10,7 @@ namespace SimpleChat.API.Controllers;
 [ApiController]
 [Route("api/[controller]")]
 [Produces("application/json")]
+[Authorize]
 public class ChatsController : ControllerBase
 {
     private readonly IChatService _chatService;

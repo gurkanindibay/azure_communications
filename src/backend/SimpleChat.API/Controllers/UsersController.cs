@@ -1,4 +1,5 @@
 using Microsoft.AspNetCore.Mvc;
+using Microsoft.AspNetCore.Authorization;
 using SimpleChat.Application.DTOs;
 using SimpleChat.Application.Interfaces;
 
@@ -7,6 +8,7 @@ namespace SimpleChat.API.Controllers;
 [ApiController]
 [Route("api/[controller]")]
 [Produces("application/json")]
+[Authorize]
 public class UsersController : ControllerBase
 {
     private readonly IUserService _userService;
