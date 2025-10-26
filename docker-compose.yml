@@ -1,0 +1,32 @@
+version: '3.8'
+
+services:
+  # SQL Server 2022 Express for local development
+  sqlserver:
+    image: mcr.microsoft.com/mssql/server:2022-latest
+    container_name: simplechat-sqlserver
+    environment:
+      - ACCEPT_EULA=Y
+      - MSSQL_SA_PASSWORD=YourStrong@Passw0rd
+      - MSSQL_PID=Express
+    ports:
+      - "1433:1433"
+    volumes:
+      - sqlserver-data:/var/opt/mssql
+      - ./database/init:/docker-entrypoint-initdb.d
+    networks:
+      - simplechat-network
+    healthcheck:
+      test: ["CMD-SHELL", "/opt/mssql-tools/bin/sqlcmd -S localhost -U sa -P YourStrong@Passw0rd -Q 'SELECT 1'"]
+      interval: 10s
+      timeout: 5s
+      retries: 5
+      start_period: 30s
+
+volumes:
+  sqlserver-data:
+    driver: local
+
+networks:
+  simplechat-network:
+    driver: bridge

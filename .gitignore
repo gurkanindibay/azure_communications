@@ -1,0 +1,52 @@
+# Environment files
+.env
+.env.local
+.env.production
+*.env
+
+# Dependencies
+node_modules/
+package-lock.json
+yarn.lock
+
+# Build outputs
+dist/
+build/
+out/
+*.log
+
+# .NET
+bin/
+obj/
+*.user
+*.suo
+*.cache
+*.dll
+*.exe
+*.pdb
+*.DotSettings.user
+.vs/
+.vscode/settings.json
+
+# Database
+*.db
+*.sqlite
+*.sqlite3
+
+# Docker
+docker-compose.override.yml
+
+# OS files
+.DS_Store
+Thumbs.db
+
+# IDE
+.idea/
+*.swp
+*.swo
+*~
+
+# Sensitive data
+azure-resources-config.txt
+appsettings.Development.json
+appsettings.Production.json
