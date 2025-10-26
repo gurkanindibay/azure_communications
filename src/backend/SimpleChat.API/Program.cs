@@ -5,8 +5,20 @@ using SimpleChat.Core.Interfaces;
 using SimpleChat.Infrastructure.Data;
 using SimpleChat.Infrastructure.UnitOfWork;
 using SimpleChat.API.Hubs;
+using Azure.Identity;
+using Azure.Security.KeyVault.Secrets;
+using Azure.Extensions.AspNetCore.Configuration.Secrets;
 
 var builder = WebApplication.CreateBuilder(args);
+
+// Configure Azure Key Vault
+var keyVaultName = builder.Configuration["KeyVault:Name"] ?? "kv-simplechat-93165";
+var keyVaultUri = new Uri($"https://{keyVaultName}.vault.azure.net/");
+
+builder.Configuration.AddAzureKeyVault(
+    keyVaultUri,
+    new DefaultAzureCredential(),
+    new KeyVaultSecretManager());
 
 // Add Database Context
 builder.Services.AddDbContext<SimpleChatDbContext>(options =>
