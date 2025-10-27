@@ -42,46 +42,49 @@ using System.IdentityModel.Tokens.Jwt;
     builder.Services.AddInMemoryRateLimiting();
     builder.Services.AddSingleton<IRateLimitConfiguration, RateLimitConfiguration>();
 
-    // Configure Authentication
+    // Configure Authentication - Azure AD is required
     JwtSecurityTokenHandler.DefaultMapInboundClaims = false;
-    
+
     var tenantId = builder.Configuration["AzureAd:TenantId"];
     var clientId = builder.Configuration["AzureAd:ClientId"];
-    
-    if (!string.IsNullOrEmpty(tenantId) && !string.IsNullOrEmpty(clientId))
+
+    if (string.IsNullOrEmpty(tenantId) || string.IsNullOrEmpty(clientId))
     {
-        builder.Services.AddAuthentication(JwtBearerDefaults.AuthenticationScheme)
-            .AddJwtBearer(options =>
-            {
-                options.Authority = $"https://login.microsoftonline.com/{tenantId}/v2.0";
-                options.TokenValidationParameters = new Microsoft.IdentityModel.Tokens.TokenValidationParameters
-                {
-                    ValidateIssuer = true,
-                    ValidateAudience = false, // ID tokens don't have API audience
-                    ValidateLifetime = true,
-                    ValidateIssuerSigningKey = true,
-                    NameClaimType = "name",
-                    RoleClaimType = "roles"
-                };
-                
-                options.Events = new JwtBearerEvents
-                {
-                    OnMessageReceived = context =>
-                    {
-                        var accessToken = context.Request.Query["access_token"];
-                        var path = context.HttpContext.Request.Path;
-                        
-                        // If accessing SignalR hub, get token from query string
-                        if (!string.IsNullOrEmpty(accessToken) && path.StartsWithSegments("/hubs"))
-                        {
-                            context.Token = accessToken;
-                        }
-                        
-                        return Task.CompletedTask;
-                    }
-                };
-            });
+        throw new InvalidOperationException(
+            "Azure AD configuration is required. Please configure AzureAd:TenantId and AzureAd:ClientId in appsettings.json");
     }
+
+    builder.Services.AddAuthentication(JwtBearerDefaults.AuthenticationScheme)
+        .AddJwtBearer(options =>
+        {
+            options.Authority = $"https://login.microsoftonline.com/{tenantId}/v2.0";
+            options.TokenValidationParameters = new Microsoft.IdentityModel.Tokens.TokenValidationParameters
+            {
+                ValidateIssuer = true,
+                ValidateAudience = false, // ID tokens don't have API audience
+                ValidateLifetime = true,
+                ValidateIssuerSigningKey = true,
+                NameClaimType = "name",
+                RoleClaimType = "roles"
+            };
+
+            options.Events = new JwtBearerEvents
+            {
+                OnMessageReceived = context =>
+                {
+                    var accessToken = context.Request.Query["access_token"];
+                    var path = context.HttpContext.Request.Path;
+
+                    // If accessing SignalR hub, get token from query string
+                    if (!string.IsNullOrEmpty(accessToken) && path.StartsWithSegments("/hubs"))
+                    {
+                        context.Token = accessToken;
+                    }
+
+                    return Task.CompletedTask;
+                }
+            };
+        });
 
     // Add Authorization
     builder.Services.AddAuthorization();
