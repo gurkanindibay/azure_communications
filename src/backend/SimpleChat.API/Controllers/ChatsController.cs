@@ -1,9 +1,7 @@
 using Microsoft.AspNetCore.Mvc;
-using Microsoft.AspNetCore.SignalR;
 using Microsoft.AspNetCore.Authorization;
 using SimpleChat.Application.DTOs;
 using SimpleChat.Application.Interfaces;
-using SimpleChat.API.Hubs;
 
 namespace SimpleChat.API.Controllers;
 
@@ -15,16 +13,13 @@ public class ChatsController : ControllerBase
 {
     private readonly IChatService _chatService;
     private readonly ILogger<ChatsController> _logger;
-    private readonly IHubContext<ChatHub> _hubContext;
 
     public ChatsController(
         IChatService chatService, 
-        ILogger<ChatsController> logger,
-        IHubContext<ChatHub> hubContext)
+        ILogger<ChatsController> logger)
     {
         _chatService = chatService;
         _logger = logger;
-        _hubContext = hubContext;
     }
 
     /// <summary>
@@ -183,9 +178,7 @@ public class ChatsController : ControllerBase
 
             var message = await _chatService.SendMessageAsync(request.UserId, request.Message);
             
-            // Notify connected clients via SignalR
-            await _hubContext.Clients.Group(message.ChatThreadId.ToString())
-                .SendAsync("ReceiveMessage", message);
+            // ACS handles real-time messaging, no need for SignalR notifications
             
             return CreatedAtAction(
                 nameof(GetThreadMessages), 

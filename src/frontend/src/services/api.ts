@@ -160,12 +160,9 @@ class ApiService {
     await this.client.post(`/chats/thread/${threadId}/read`, { userId });
   }
 
-  async getUnreadCount(threadId: string, userId: string): Promise<number> {
-    const response = await this.client.get<{ unreadCount: number }>(
-      `/chats/thread/${threadId}/unread`,
-      { params: { userId } }
-    );
-    return response.data.unreadCount;
+  async getAcsToken(): Promise<{ token: string; expiresOn: string; acsUserId: string; endpoint: string }> {
+    const response = await this.client.get<{ token: string; expiresOn: string; acsUserId: string; endpoint: string }>('/auth/acs-token');
+    return response.data;
   }
 }
 

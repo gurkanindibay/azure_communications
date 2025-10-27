@@ -76,6 +76,20 @@ public class UserService : IUserService
         return MapToDto(user);
     }
 
+    public async Task UpdateUserEntraIdAsync(Guid userId, string entraIdObjectId)
+    {
+        var user = await _unitOfWork.Users.GetByIdAsync(userId);
+        
+        if (user == null)
+        {
+            throw new KeyNotFoundException($"User with ID {userId} not found");
+        }
+
+        user.EntraIdObjectId = entraIdObjectId;
+        await _unitOfWork.Users.UpdateAsync(user);
+        await _unitOfWork.SaveChangesAsync();
+    }
+
     public async Task<IEnumerable<UserDto>> SearchUsersAsync(string searchTerm)
     {
         var users = await _unitOfWork.Users.SearchUsersAsync(searchTerm);

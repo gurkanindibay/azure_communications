@@ -2,6 +2,7 @@ using Microsoft.AspNetCore.Mvc;
 using Microsoft.AspNetCore.Authorization;
 using SimpleChat.Application.DTOs;
 using SimpleChat.Application.Interfaces;
+using SimpleChat.Application.Services;
 
 namespace SimpleChat.API.Controllers;
 
@@ -214,8 +215,9 @@ public class UsersController : ControllerBase
     /// </summary>
     [HttpPatch("{id:guid}/status")]
     [ProducesResponseType(StatusCodes.Status204NoContent)]
+    [ProducesResponseType(StatusCodes.Status404NotFound)]
     [ProducesResponseType(StatusCodes.Status400BadRequest)]
-    public async Task<IActionResult> UpdateOnlineStatus(Guid id, [FromBody] UpdateOnlineStatusDto statusDto)
+    public async Task<IActionResult> UpdateUserStatus(Guid id, [FromBody] UpdateOnlineStatusDto statusDto)
     {
         try
         {
@@ -227,10 +229,15 @@ public class UsersController : ControllerBase
             await _userService.UpdateUserOnlineStatusAsync(id, statusDto.IsOnline);
             return NoContent();
         }
+        catch (KeyNotFoundException ex)
+        {
+            _logger.LogWarning(ex, "User {UserId} not found for status update", id);
+            return NotFound(new { message = ex.Message });
+        }
         catch (Exception ex)
         {
-            _logger.LogError(ex, "Error updating online status for user {UserId}", id);
-            return StatusCode(500, new { message = "An error occurred while updating online status" });
+            _logger.LogError(ex, "Error updating user status {UserId}", id);
+            return StatusCode(500, new { message = "An error occurred while updating user status" });
         }
     }
 }

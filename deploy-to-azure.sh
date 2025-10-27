@@ -30,8 +30,9 @@ AFD_BACKEND_ORIGIN_GROUP="simplechat-backend-origin-group"
 AZURE_AD_TENANT_ID="a2b8448e-4362-4c41-ba77-8959e85aff31"
 AZURE_AD_CLIENT_ID="b29d2aae-f1d9-4c00-81ce-13e2848fe728"
 
-# ACS Configuration (placeholder)
-ACS_CONNECTION_STRING="endpoint=https://your-acs-resource.communication.azure.com/;accesskey=PLACEHOLDER"
+# ACS Configuration
+ACS_RESOURCE_NAME="simplechat-communication"
+ACS_CONNECTION_STRING="endpoint=https://$ACS_RESOURCE_NAME.unitedstates.communication.azure.com/;accesskey=PLACEHOLDER"
 
 echo "========================================="
 echo "SimpleChat Azure Deployment"
@@ -160,6 +161,31 @@ fi
 SQL_CONNECTION_STRING="Server=tcp:${SQL_SERVER_NAME}.database.windows.net,1433;Initial Catalog=${SQL_DATABASE_NAME};Persist Security Info=False;User ID=${SQL_ADMIN_USER};Password=${SQL_ADMIN_PASSWORD};MultipleActiveResultSets=True;Encrypt=True;TrustServerCertificate=False;Connection Timeout=30;"
 
 echo "SQL Connection String: $SQL_CONNECTION_STRING"
+
+# Step 2.5: Create Azure Communication Services resource
+echo ""
+echo "Step 2.5: Checking Azure Communication Services resource '$ACS_RESOURCE_NAME'..."
+
+if az communication list --resource-group $RESOURCE_GROUP --query "[?name=='$ACS_RESOURCE_NAME']" --output tsv | grep -q "$ACS_RESOURCE_NAME"; then
+  echo "ACS resource '$ACS_RESOURCE_NAME' already exists. Skipping creation."
+else
+  echo "Creating Azure Communication Services resource..."
+  az communication create \
+    --name $ACS_RESOURCE_NAME \
+    --resource-group $RESOURCE_GROUP \
+    --location $LOCATION \
+    --data-location UnitedStates \
+    --output table
+
+  # Get the actual connection string
+  ACS_CONNECTION_STRING=$(az communication list-key \
+    --name $ACS_RESOURCE_NAME \
+    --resource-group $RESOURCE_GROUP \
+    --query primaryConnectionString \
+    --output tsv)
+fi
+
+echo "ACS Connection String: $ACS_CONNECTION_STRING"
 
 # Step 3: Get existing ACR credentials
 echo ""

@@ -6,7 +6,7 @@ using SimpleChat.Application.Services;
 using SimpleChat.Core.Interfaces;
 using SimpleChat.Infrastructure.Data;
 using SimpleChat.Infrastructure.UnitOfWork;
-using SimpleChat.API.Hubs;
+using SimpleChat.Infrastructure.Services;
 using AspNetCoreRateLimit;
 using Serilog;
 using System.IdentityModel.Tokens.Jwt;
@@ -34,6 +34,13 @@ using System.IdentityModel.Tokens.Jwt;
     // Add Application Services
     builder.Services.AddScoped<IUserService, UserService>();
     builder.Services.AddScoped<IChatService, ChatService>();
+    builder.Services.AddScoped<IAuthService, AuthService>();
+
+    // Add Infrastructure Services
+    builder.Services.AddScoped<IAzureCommunicationService, AzureCommunicationService>();
+
+    // Add AutoMapper
+    builder.Services.AddAutoMapper(typeof(SimpleChat.Application.MappingProfile).Assembly);
 
     // Configure Rate Limiting
     builder.Services.AddMemoryCache();
@@ -70,19 +77,7 @@ using System.IdentityModel.Tokens.Jwt;
 
             options.Events = new JwtBearerEvents
             {
-                OnMessageReceived = context =>
-                {
-                    var accessToken = context.Request.Query["access_token"];
-                    var path = context.HttpContext.Request.Path;
-
-                    // If accessing SignalR hub, get token from query string
-                    if (!string.IsNullOrEmpty(accessToken) && path.StartsWithSegments("/hubs"))
-                    {
-                        context.Token = accessToken;
-                    }
-
-                    return Task.CompletedTask;
-                }
+                // Removed SignalR-specific token handling as we're now using ACS
             };
         });
 
@@ -114,9 +109,6 @@ using System.IdentityModel.Tokens.Jwt;
 
     // Add Controllers
     builder.Services.AddControllers();
-
-    // Add SignalR
-    builder.Services.AddSignalR();
 
     // Add services to the container.
     // Learn more about configuring Swagger/OpenAPI at https://aka.ms/aspnetcore/swashbuckle
@@ -161,7 +153,6 @@ using System.IdentityModel.Tokens.Jwt;
     app.UseSerilogRequestLogging();
 
     app.MapControllers();
-    app.MapHub<ChatHub>("/hubs/chat");
 
     // Health check endpoint
     app.MapGet("/health", () => Results.Ok(new { status = "healthy", timestamp = DateTime.UtcNow }))

@@ -9,9 +9,12 @@ interface AuthContextType {
   account: AccountInfo | null;
   isAuthenticated: boolean;
   isLoading: boolean;
+  acsToken: string | null;
+  acsEndpoint: string | null;
   login: () => Promise<void>;
   logout: () => Promise<void>;
   refreshUser: () => Promise<void>;
+  refreshAcsToken: () => Promise<void>;
 }
 
 const AuthContext = createContext<AuthContextType | undefined>(undefined);
@@ -19,6 +22,8 @@ const AuthContext = createContext<AuthContextType | undefined>(undefined);
 export const AuthProvider: React.FC<{ children: React.ReactNode }> = ({ children }) => {
   const { instance, accounts } = useMsal();
   const [user, setUser] = useState<User | null>(null);
+  const [acsToken, setAcsToken] = useState<string | null>(null);
+  const [acsEndpoint, setAcsEndpoint] = useState<string | null>(null);
   const [isLoading, setIsLoading] = useState(true);
 
   const account = accounts[0] || null;
@@ -123,6 +128,25 @@ export const AuthProvider: React.FC<{ children: React.ReactNode }> = ({ children
     }
   };
 
+  const refreshAcsToken = async () => {
+    if (!user) return;
+
+    try {
+      const response = await apiService.getAcsToken();
+      setAcsToken(response.token);
+      // Extract endpoint from the token or use a configured endpoint
+      setAcsEndpoint(import.meta.env.VITE_ACS_ENDPOINT || 'https://your-acs-resource.communication.azure.com/');
+    } catch (error) {
+      console.error('Failed to get ACS token:', error);
+    }
+  };
+
+  useEffect(() => {
+    if (user) {
+      refreshAcsToken();
+    }
+  }, [user]);
+
   const refreshUser = async () => {
     if (user) {
       const updatedUser = await apiService.getUser(user.id);
@@ -137,9 +161,12 @@ export const AuthProvider: React.FC<{ children: React.ReactNode }> = ({ children
         account,
         isAuthenticated,
         isLoading,
+        acsToken,
+        acsEndpoint,
         login,
         logout,
         refreshUser,
+        refreshAcsToken,
       }}
     >
       {children}

@@ -2,16 +2,25 @@ using SimpleChat.Application.DTOs;
 using SimpleChat.Application.Interfaces;
 using SimpleChat.Core.Entities;
 using SimpleChat.Core.Interfaces;
+using SimpleChat.Infrastructure.Services;
+using AutoMapper;
 
 namespace SimpleChat.Application.Services;
 
 public class ChatService : IChatService
 {
     private readonly IUnitOfWork _unitOfWork;
+    private readonly IAzureCommunicationService _acsService;
+    private readonly IMapper _mapper;
 
-    public ChatService(IUnitOfWork unitOfWork)
+    public ChatService(
+        IUnitOfWork unitOfWork,
+        IAzureCommunicationService acsService,
+        IMapper mapper)
     {
         _unitOfWork = unitOfWork;
+        _acsService = acsService;
+        _mapper = mapper;
     }
 
     public async Task<ChatThreadDto> GetOrCreateThreadAsync(Guid currentUserId, Guid otherUserId)
@@ -25,10 +34,38 @@ public class ChatService : IChatService
             return MapToThreadDto(existingThread, currentUserId, unreadCount);
         }
 
-        // Create new thread
+        // Get users
+        var currentUser = await _unitOfWork.Users.GetByIdAsync(currentUserId);
+        var otherUser = await _unitOfWork.Users.GetByIdAsync(otherUserId);
+
+        if (currentUser == null || otherUser == null)
+            throw new KeyNotFoundException("User not found");
+
+        // Ensure both users have ACS identities
+        if (string.IsNullOrEmpty(currentUser.AzureCommunicationUserId))
+        {
+            var acsIdentity = await _acsService.CreateUserIdentityAsync();
+            currentUser.AzureCommunicationUserId = acsIdentity.Id;
+            await _unitOfWork.Users.UpdateAsync(currentUser);
+        }
+
+        if (string.IsNullOrEmpty(otherUser.AzureCommunicationUserId))
+        {
+            var acsIdentity = await _acsService.CreateUserIdentityAsync();
+            otherUser.AzureCommunicationUserId = acsIdentity.Id;
+            await _unitOfWork.Users.UpdateAsync(otherUser);
+        }
+
+        // Create ACS chat thread
+        var threadId = await _acsService.CreateChatThreadAsync(
+            $"{currentUser.DisplayName} and {otherUser.DisplayName}",
+            new[] { currentUser.AzureCommunicationUserId, otherUser.AzureCommunicationUserId });
+
+        // Create conversation in database
         var newThread = new ChatThread
         {
             Id = Guid.NewGuid(),
+            AzureCommunicationThreadId = threadId,
             User1Id = currentUserId,
             User2Id = otherUserId,
             CreatedAt = DateTime.UtcNow,
@@ -101,11 +138,25 @@ public class ChatService : IChatService
             throw new UnauthorizedAccessException("User is not a participant in this thread");
         }
 
+        var sender = await _unitOfWork.Users.GetByIdAsync(userId);
+        if (sender == null || string.IsNullOrEmpty(sender.AzureCommunicationUserId))
+        {
+            throw new KeyNotFoundException("Sender not found or missing ACS identity");
+        }
+
+        // Send via ACS
+        var acsMessageId = await _acsService.SendMessageAsync(
+            thread.AzureCommunicationThreadId!,
+            sender.AzureCommunicationUserId,
+            sendMessageDto.Content);
+
+        // Save to database
         var message = new Message
         {
             Id = Guid.NewGuid(),
             ChatThreadId = sendMessageDto.ChatThreadId,
             SenderId = userId,
+            AzureCommunicationMessageId = acsMessageId,
             Content = sendMessageDto.Content,
             SentAt = DateTime.UtcNow,
             Type = MessageType.Text,

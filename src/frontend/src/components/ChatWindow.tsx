@@ -10,12 +10,11 @@ import {
 } from '@mui/material';
 import { Send as SendIcon } from '@mui/icons-material';
 import { formatDistanceToNow } from 'date-fns';
-import { useMsal } from '@azure/msal-react';
 import type { ChatThread, Message } from '../types';
 import { apiService } from '../services/api';
 import { useAuth } from '../contexts/AuthContext';
 import { MessageType } from '../types';
-import { useSignalRChat } from '../hooks/useChatClient';
+import { useAcsChat } from '../hooks/useAcsChat';
 
 interface ChatWindowProps {
   thread: ChatThread | null;
@@ -24,42 +23,41 @@ interface ChatWindowProps {
 
 export const ChatWindow: React.FC<ChatWindowProps> = ({ thread, onMessageSent }) => {
   const { user } = useAuth();
-  const { instance, accounts } = useMsal();
   const [messages, setMessages] = useState<Message[]>([]);
   const [newMessage, setNewMessage] = useState('');
   const [loading, setLoading] = useState(false);
   const [sending, setSending] = useState(false);
+  const [acsToken, setAcsToken] = useState<string | null>(null);
+  const [acsEndpoint, setAcsEndpoint] = useState<string | null>(null);
   const messagesEndRef = useRef<HTMLDivElement>(null);
 
-  // Function to get access token for SignalR
-  const getAccessToken = useCallback(async (): Promise<string | null> => {
-    const account = accounts[0];
-    if (!account) return null;
-    
+  // Function to get ACS token
+  const getAcsToken = useCallback(async () => {
     try {
-      const response = await instance.acquireTokenSilent({
-        scopes: ['openid', 'profile', 'email'],
-        account: account,
-      });
-      return response.idToken;
+      const response = await apiService.getAcsToken();
+      setAcsToken(response.token);
+      setAcsEndpoint(response.endpoint);
+      return response.token;
     } catch (error) {
-      console.error('Error acquiring token for SignalR:', error);
-      try {
-        const response = await instance.acquireTokenPopup({
-          scopes: ['openid', 'profile', 'email'],
-          account: account,
-        });
-        return response.idToken;
-      } catch (popupError) {
-        console.error('Error acquiring token via popup for SignalR:', popupError);
-        return null;
-      }
+      console.error('Error getting ACS token:', error);
+      return null;
     }
-  }, [instance, accounts]);
+  }, []);
 
-  // Handle incoming messages from SignalR
-  const handleMessageReceived = useCallback((message: Message) => {
-    console.log('New message received:', message);
+  // Handle incoming messages from ACS
+  const handleMessageReceived = useCallback((event: any) => {
+    console.log('New message received via ACS:', event);
+    
+    // Convert ACS message to our Message format
+    const message: Message = {
+      id: event.message.id,
+      chatThreadId: thread?.id || '',
+      senderId: event.sender.id,
+      content: event.message.content.message,
+      type: MessageType.Text,
+      sentAt: event.message.createdOn,
+      isDeleted: false,
+    };
     
     // Only add the message if it belongs to the current thread
     if (thread && message.chatThreadId === thread.id) {
@@ -78,21 +76,32 @@ export const ChatWindow: React.FC<ChatWindowProps> = ({ thread, onMessageSent })
     }
   }, [thread, user]);
 
-  // Set up SignalR connection
-  useSignalRChat({
+  // Set up ACS chat connection
+  const {
+    isConnected: acsConnected,
+    initializeChat,
+    sendMessage: acsSendMessage,
+  } = useAcsChat({
     threadId: thread?.id,
     onMessageReceived: handleMessageReceived,
-    getAccessToken,
   });
 
   useEffect(() => {
     if (thread) {
       loadMessages();
       markAsRead();
+      // Initialize ACS chat if not already connected
+      if (!acsConnected && !acsToken) {
+        getAcsToken().then(token => {
+          if (token && acsEndpoint) {
+            initializeChat(token, acsEndpoint);
+          }
+        });
+      }
     } else {
       setMessages([]);
     }
-  }, [thread]);
+  }, [thread, acsConnected, acsToken, acsEndpoint, getAcsToken, initializeChat]);
 
   useEffect(() => {
     scrollToBottom();
@@ -133,13 +142,19 @@ export const ChatWindow: React.FC<ChatWindowProps> = ({ thread, onMessageSent })
 
     try {
       setSending(true);
-      await apiService.sendMessage(user.id, {
-        chatThreadId: thread.id,
-        content: newMessage.trim(),
-        type: MessageType.Text,
-      });
       
-      // No need to manually add message to state - SignalR will handle it
+      if (acsConnected) {
+        // Use ACS for real-time messaging
+        await acsSendMessage(newMessage.trim());
+      } else {
+        // Fallback to API if ACS not connected
+        await apiService.sendMessage(user.id, {
+          chatThreadId: thread.id,
+          content: newMessage.trim(),
+          type: MessageType.Text,
+        });
+      }
+      
       setNewMessage('');
       onMessageSent?.();
     } catch (error) {

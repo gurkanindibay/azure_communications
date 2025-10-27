@@ -9,6 +9,7 @@ public interface IUserService
     Task<UserDto?> GetUserByEntraIdAsync(string entraIdObjectId);
     Task<UserDto> CreateUserAsync(CreateUserDto createUserDto);
     Task<UserDto> UpdateUserAsync(Guid userId, UpdateUserDto updateUserDto);
+    Task UpdateUserEntraIdAsync(Guid userId, string entraIdObjectId);
     Task<IEnumerable<UserDto>> SearchUsersAsync(string searchTerm);
     Task<IEnumerable<UserDto>> GetOnlineUsersAsync();
     Task UpdateUserOnlineStatusAsync(Guid userId, bool isOnline);
