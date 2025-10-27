@@ -5,8 +5,7 @@ import type {
   UpdateUserDto, 
   ChatThread, 
   ChatThreadDetail, 
-  Message, 
-  SendMessageDto,
+  Message,
   PaginationParams 
 } from '../types';
 
@@ -153,13 +152,9 @@ class ApiService {
     return response.data;
   }
 
-  async sendMessage(userId: string, message: SendMessageDto): Promise<Message> {
-    const response = await this.client.post<Message>('/chats/messages', {
-      userId,
-      message,
-    });
-    return response.data;
-  }
+  // NOTE: Message sending is done directly via ACS Chat SDK (acsChatService.sendMessage)
+  // This keeps backend out of the real-time messaging flow per Azure best practices
+  // Backend only stores messages for history/search via ACS webhooks or periodic sync
 
   async markMessagesAsRead(threadId: string, userId: string): Promise<void> {
     await this.client.post(`/chats/thread/${threadId}/read`, { userId });

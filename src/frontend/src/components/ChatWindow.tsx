@@ -34,27 +34,13 @@ interface ChatWindowProps {
 }
 
 export const ChatWindow: React.FC<ChatWindowProps> = ({ thread, onMessageSent }) => {
-  const { user } = useAuth();
+  const { user, acsToken, acsEndpoint } = useAuth(); // Get ACS token from AuthContext
   const [messages, setMessages] = useState<Message[]>([]);
   const [newMessage, setNewMessage] = useState('');
   const [loading, setLoading] = useState(false);
   const [sending, setSending] = useState(false);
-  const [acsToken, setAcsToken] = useState<string | null>(null);
-  const [acsEndpoint, setAcsEndpoint] = useState<string | null>(null);
   const messagesEndRef = useRef<HTMLDivElement>(null);
-
-  // Function to get ACS token
-  const getAcsToken = useCallback(async () => {
-    try {
-      const response = await apiService.getAcsToken();
-      setAcsToken(response.token);
-      setAcsEndpoint(response.endpoint);
-      return response.token;
-    } catch (error) {
-      console.error('Error getting ACS token:', error);
-      return null;
-    }
-  }, []);
+  const initAttemptedRef = useRef(false); // Track if we've attempted initialization
 
   // Handle incoming messages from ACS
   const handleMessageReceived = useCallback((event: any) => {
@@ -104,6 +90,8 @@ export const ChatWindow: React.FC<ChatWindowProps> = ({ thread, onMessageSent })
   // Set up ACS chat connection
   const {
     isConnected: acsConnected,
+    isConnecting: acsConnecting,
+    error: acsError,
     initializeChat,
     sendMessage: acsSendMessage,
   } = useAcsChat({
@@ -111,22 +99,27 @@ export const ChatWindow: React.FC<ChatWindowProps> = ({ thread, onMessageSent })
     onMessageReceived: handleMessageReceived,
   });
 
+  // Initialize ACS connection once when token is available
+  useEffect(() => {
+    if (!acsConnected && !acsConnecting && acsToken && acsEndpoint && !initAttemptedRef.current) {
+      console.log('Initializing ACS connection...', { 
+        hasToken: !!acsToken, 
+        endpoint: acsEndpoint 
+      });
+      initAttemptedRef.current = true; // Mark that we've attempted initialization
+      initializeChat(acsToken, acsEndpoint);
+    }
+  }, [acsToken, acsEndpoint, acsConnected, acsConnecting]); // Don't include initializeChat to avoid loop
+
+  // Load messages when thread changes
   useEffect(() => {
     if (thread) {
       loadMessages();
       markAsRead();
-      // Initialize ACS chat if not already connected
-      if (!acsConnected && !acsToken) {
-        getAcsToken().then(token => {
-          if (token && acsEndpoint) {
-            initializeChat(token, acsEndpoint);
-          }
-        });
-      }
     } else {
       setMessages([]);
     }
-  }, [thread?.id]); // Only depend on thread ID to prevent excessive re-runs
+  }, [thread?.id]); // Only depend on thread ID
 
   useEffect(() => {
     scrollToBottom();
@@ -168,22 +161,27 @@ export const ChatWindow: React.FC<ChatWindowProps> = ({ thread, onMessageSent })
     try {
       setSending(true);
       
-      if (acsConnected) {
-        // Use ACS for real-time messaging
-        await acsSendMessage(newMessage.trim());
-      } else {
-        // Fallback to API if ACS not connected
-        await apiService.sendMessage(user.id, {
-          chatThreadId: thread.id,
-          content: newMessage.trim(),
-          type: MessageType.Text,
-        });
+      if (!acsConnected) {
+        console.error('ACS not connected. Token:', !!acsToken, 'Endpoint:', !!acsEndpoint);
+        throw new Error('Chat service not connected. Please wait a moment or refresh the page.');
       }
       
+      // ALWAYS use ACS directly for real-time messaging
+      // Messages are delivered in real-time via ACS events
+      const messageId = await acsSendMessage(newMessage.trim());
+      
+      if (!messageId) {
+        throw new Error('Failed to send message - no message ID returned');
+      }
+      
+      console.log('Message sent successfully:', messageId);
       setNewMessage('');
       onMessageSent?.();
     } catch (error) {
       console.error('Error sending message:', error);
+      // Show error to user
+      const errorMessage = error instanceof Error ? error.message : 'Failed to send message';
+      alert(errorMessage);
     } finally {
       setSending(false);
     }
@@ -222,11 +220,50 @@ export const ChatWindow: React.FC<ChatWindowProps> = ({ thread, onMessageSent })
         <Avatar alt={thread.otherUser?.displayName} src={thread.otherUser?.avatarUrl}>
           {thread.otherUser?.displayName.charAt(0).toUpperCase()}
         </Avatar>
-        <Box>
+        <Box sx={{ flexGrow: 1 }}>
           <Typography variant="subtitle1">{thread.otherUser?.displayName}</Typography>
           <Typography variant="caption" color="text.secondary">
             {thread.otherUser?.isOnline ? 'Online' : 'Offline'}
           </Typography>
+        </Box>
+        {/* ACS Connection Status Indicator */}
+        <Box sx={{ display: 'flex', alignItems: 'center', gap: 1 }}>
+          {acsConnecting ? (
+            <>
+              <CircularProgress size={12} />
+              <Typography variant="caption" color="info.main">
+                Connecting...
+              </Typography>
+            </>
+          ) : !acsConnected ? (
+            <>
+              <Box
+                sx={{
+                  width: 8,
+                  height: 8,
+                  borderRadius: '50%',
+                  bgcolor: 'error.main',
+                }}
+              />
+              <Typography variant="caption" color="error.main" title={acsError || 'Connection failed'}>
+                Disconnected
+              </Typography>
+            </>
+          ) : (
+            <>
+              <Box
+                sx={{
+                  width: 8,
+                  height: 8,
+                  borderRadius: '50%',
+                  bgcolor: 'success.main',
+                }}
+              />
+              <Typography variant="caption" color="success.main">
+                Connected
+              </Typography>
+            </>
+          )}
         </Box>
       </Box>
 

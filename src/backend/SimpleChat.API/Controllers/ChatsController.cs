@@ -156,8 +156,13 @@ public class ChatsController : ControllerBase
 
     /// <summary>
     /// Send a message in a thread
+    /// DEPRECATED: Messages should be sent directly to ACS from the frontend for real-time delivery.
+    /// This endpoint exists only for backward compatibility or special use cases.
+    /// For proper architecture, use ACS Chat SDK directly on the frontend.
+    /// Backend should receive messages via ACS Event Grid webhooks for persistence.
     /// </summary>
     [HttpPost("messages")]
+    [Obsolete("Use ACS Chat SDK directly from frontend instead of routing through backend")]
     [ProducesResponseType(typeof(MessageDto), StatusCodes.Status201Created)]
     [ProducesResponseType(StatusCodes.Status400BadRequest)]
     [ProducesResponseType(StatusCodes.Status404NotFound)]

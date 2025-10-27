@@ -26,30 +26,42 @@ export const useAcsChat = ({
 }: UseAcsChatOptions) => {
   const [isConnected, setIsConnected] = useState(false);
   const [isConnecting, setIsConnecting] = useState(false);
-
-  const eventHandlers: AcsChatEventHandlers = {
-    onMessageReceived,
-    onTypingIndicatorReceived,
-    onReadReceiptReceived,
-    onChatMessageEdited,
-    onChatMessageDeleted,
-    onParticipantsAdded,
-    onParticipantsRemoved,
-  };
+  const [error, setError] = useState<string | null>(null);
 
   const initializeChat = useCallback(async (token: string, endpoint: string) => {
+    if (isConnecting || isConnected) {
+      console.log('Already connecting or connected, skipping initialization');
+      return;
+    }
+
     try {
+      console.log('Starting ACS initialization...', { hasToken: !!token, endpoint });
       setIsConnecting(true);
+      setError(null);
+      
+      const eventHandlers: AcsChatEventHandlers = {
+        onMessageReceived,
+        onTypingIndicatorReceived,
+        onReadReceiptReceived,
+        onChatMessageEdited,
+        onChatMessageDeleted,
+        onParticipantsAdded,
+        onParticipantsRemoved,
+      };
+      
       await acsChatService.initialize(token, endpoint, eventHandlers);
       setIsConnected(true);
-      console.log('ACS chat initialized successfully');
+      console.log('✅ ACS chat initialized successfully');
     } catch (error) {
-      console.error('Error initializing ACS chat:', error);
+      const errorMessage = error instanceof Error ? error.message : 'Unknown error';
+      console.error('❌ Error initializing ACS chat:', errorMessage, error);
+      setError(errorMessage);
       setIsConnected(false);
     } finally {
       setIsConnecting(false);
     }
-  }, [eventHandlers]);
+  }, [isConnecting, isConnected, onMessageReceived, onTypingIndicatorReceived, onReadReceiptReceived, 
+      onChatMessageEdited, onChatMessageDeleted, onParticipantsAdded, onParticipantsRemoved]);
 
   const joinThread = useCallback(async (threadId: string) => {
     if (!isConnected) {
@@ -157,6 +169,7 @@ export const useAcsChat = ({
   return {
     isConnected,
     isConnecting,
+    error,
     initializeChat,
     joinThread,
     sendMessage,

@@ -29,9 +29,11 @@ public interface IAzureCommunicationService
 public class AzureCommunicationService : IAzureCommunicationService
 {
     private readonly CommunicationIdentityClient _identityClient;
-    private readonly ChatClient _chatClient;
-    private readonly ILogger<AzureCommunicationService> _logger;
     private readonly string _endpoint;
+    private readonly string _connectionString;
+    private readonly ILogger<AzureCommunicationService> _logger;
+    private ChatClient? _chatClient;
+    private readonly SemaphoreSlim _initLock = new SemaphoreSlim(1, 1);
 
     public string Endpoint => _endpoint;
 
@@ -45,20 +47,44 @@ public class AzureCommunicationService : IAzureCommunicationService
             throw new InvalidOperationException("Azure Communication Services connection string is not configured");
         }
 
+        _connectionString = connectionString;
         var connectionStringParts = connectionString.Split(';');
         var endpoint = connectionStringParts.First(p => p.StartsWith("endpoint=")).Split('=')[1];
-        var accessKey = connectionStringParts.First(p => p.StartsWith("accesskey=")).Split('=')[1];
 
         _endpoint = endpoint;
         _identityClient = new CommunicationIdentityClient(connectionString);
-        
-        // Create a service user identity for ChatClient operations
-        var serviceUser = _identityClient.CreateUserAsync().Result;
-        var tokenResponse = _identityClient.GetTokenAsync(serviceUser.Value, new[] { CommunicationTokenScope.Chat }).Result;
-        var tokenCredential = new CommunicationTokenCredential(tokenResponse.Value.Token);
-        
-        _chatClient = new ChatClient(new Uri(endpoint), tokenCredential);
         _logger = logger;
+        
+        // Don't initialize ChatClient in constructor - it will be lazy initialized when needed
+    }
+
+    private async Task<ChatClient> GetChatClientAsync()
+    {
+        if (_chatClient != null)
+            return _chatClient;
+
+        await _initLock.WaitAsync();
+        try
+        {
+            if (_chatClient != null)
+                return _chatClient;
+
+            _logger.LogInformation("Initializing ChatClient...");
+            
+            // Create a service user identity for ChatClient operations
+            var serviceUser = await _identityClient.CreateUserAsync();
+            var tokenResponse = await _identityClient.GetTokenAsync(serviceUser.Value, new[] { CommunicationTokenScope.Chat });
+            var tokenCredential = new CommunicationTokenCredential(tokenResponse.Value.Token);
+            
+            _chatClient = new ChatClient(new Uri(_endpoint), tokenCredential);
+            
+            _logger.LogInformation("ChatClient initialized successfully");
+            return _chatClient;
+        }
+        finally
+        {
+            _initLock.Release();
+        }
     }
 
     public async Task<CommunicationUserIdentifier> CreateUserIdentityAsync()
@@ -95,13 +121,15 @@ public class AzureCommunicationService : IAzureCommunicationService
     {
         try
         {
+            var chatClient = await GetChatClientAsync();
+            
             var participants = participantIds.Select(id =>
                 new ChatParticipant(new CommunicationUserIdentifier(id))
                 {
                     DisplayName = id
                 });
 
-            var response = await _chatClient.CreateChatThreadAsync(topic, participants);
+            var response = await chatClient.CreateChatThreadAsync(topic, participants);
             var threadId = response.Value.ChatThread.Id;
 
             _logger.LogInformation("Created ACS chat thread: {ThreadId}", threadId);
@@ -118,7 +146,8 @@ public class AzureCommunicationService : IAzureCommunicationService
     {
         try
         {
-            var chatThreadClient = _chatClient.GetChatThreadClient(threadId);
+            var chatClient = await GetChatClientAsync();
+            var chatThreadClient = chatClient.GetChatThreadClient(threadId);
             var sendMessageOptions = new SendChatMessageOptions
             {
                 Content = content,
@@ -140,7 +169,8 @@ public class AzureCommunicationService : IAzureCommunicationService
     {
         try
         {
-            var chatThreadClient = _chatClient.GetChatThreadClient(threadId);
+            var chatClient = await GetChatClientAsync();
+            var chatThreadClient = chatClient.GetChatThreadClient(threadId);
             var participant = new ChatParticipant(new CommunicationUserIdentifier(userId))
             {
                 DisplayName = userId

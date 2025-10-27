@@ -169,11 +169,19 @@ The application is a web-based real-time messaging platform that enables authent
 
 ### 2.3 Communication Patterns
 
+> **⚠️ CRITICAL DESIGN PRINCIPLE**: Messages MUST be sent directly from Frontend to ACS, NOT through the Backend API. The backend should only create threads, provide tokens, and optionally persist messages via ACS webhooks. Routing messages through the backend defeats the purpose of using Azure Communication Services and creates unnecessary latency and bottlenecks.
+
 #### 2.3.1 Frontend ↔ Backend
 - **Protocol**: HTTPS/REST
 - **Format**: JSON
 - **Authentication**: Bearer token (JWT from Entra ID)
 - **Pattern**: Request/Response
+- **Usage**: 
+  - User management (CRUD)
+  - Thread creation and listing
+  - ACS token retrieval
+  - Message history (optional, from DB)
+  - **NOT for sending real-time messages** ❌
 
 #### 2.3.2 Backend ↔ Database
 - **Protocol**: SQL over TLS
@@ -184,11 +192,23 @@ The application is a web-based real-time messaging platform that enables authent
 - **Protocol**: HTTPS/WebSocket
 - **SDK**: @azure/communication-chat
 - **Pattern**: Event-driven (real-time messages)
+- **Usage**: 
+  - **Sending messages** ✅ (PRIMARY PATH)
+  - **Receiving messages in real-time** ✅
+  - Typing indicators ✅
+  - Read receipts ✅
+  - Thread participant events ✅
 
 #### 2.3.4 Backend ↔ ACS
 - **Protocol**: HTTPS/REST
 - **SDK**: Azure.Communication.Identity, Azure.Communication.Chat
 - **Pattern**: Request/Response
+- **Usage**: 
+  - Creating ACS user identities
+  - Generating access tokens
+  - Creating chat threads
+  - **NOT for relaying client messages** ❌
+  - Optional: Receiving Event Grid webhooks for persistence
 
 ### 2.4 Key Design Principles
 
@@ -3424,27 +3444,62 @@ public class ChatController : ControllerBase
 
 ## 12. Data Flow Diagrams
 
-### 12.1 Send Message Flow
+### 12.1 Send Message Flow (CORRECTED - Direct ACS Communication)
 
 ```
+User A (Browser)                    Azure ACS                       User B (Browser)                Backend API (Optional)
+     │                                   │                              │                                    │
+     │ 1. Type message                   │                              │                                    │
+     │ 2. Click Send                     │                              │                                    │
+     │────────────────────────────────>│                              │                                    │
+     │ 3. ACS Chat SDK                   │                              │                                    │
+     │    sendMessage()                  │                              │                                    │
+     │                                   │ 4. Real-time delivery        │                                    │
+     │                                   │─────────────────────────────>│                                    │
+     │                                   │                              │ 5. Message appears                 │
+     │<────────────────────────────────│                              │    via chatMessageReceived         │
+     │ 6. Message ID returned            │                              │    event                           │
+     │                                   │                              │                                    │
+     │                                   │ 7. (Optional) Event Grid     │                                    │
+     │                                   │    webhook notification      │                                    │
+     │                                   │──────────────────────────────────────────────────────────────────>│
+     │                                   │                              │                              8. Store in DB
+     │                                   │                              │                                 for history
+
+⚠️  IMPORTANT: 
+- Messages flow DIRECTLY from Frontend → ACS → Other Frontend
+- Backend is NOT in the critical message path
+- Backend only receives Event Grid webhooks (optional) for persistence
+- This ensures lowest latency and leverages ACS's real-time infrastructure
+
+```
+
+### 12.1b Send Message Flow (INCORRECT - Do NOT Implement This Way)
+
+```
+❌ ANTI-PATTERN - DO NOT USE ❌
+
 User A (Browser)                    Backend API                     Azure ACS                    User B (Browser)
      │                                   │                              │                              │
      │ 1. Type message                   │                              │                              │
      │ 2. Click Send                     │                              │                              │
      │────────────────────────────────>│                              │                              │
-     │ POST /api/conversations/         │                              │                              │
-     │      {id}/messages               │                              │                              │
+     │ POST /api/chats/messages          │                              │                              │
      │                                   │ 3. Validate token            │                              │
      │                                   │ 4. Save to database          │                              │
      │                                   │──────────────────────────>│                              │
      │                                   │ 5. Send via ACS Chat SDK     │                              │
-     │                                   │                              │                              │
      │                                   │                              │ 6. Real-time delivery        │
      │                                   │                              │─────────────────────────────>│
-     │                                   │                              │                              │ 7. Message appears
      │<────────────────────────────────│                              │                              │
-     │ 8. Return message DTO            │                              │                              │
-     │                                   │                              │                              │
+     │ 7. Return message DTO            │                              │                              │
+
+PROBLEMS WITH THIS APPROACH:
+- ❌ Backend becomes bottleneck for all messages
+- ❌ Adds unnecessary latency (2 hops instead of 1)
+- ❌ Backend can't scale as efficiently as ACS
+- ❌ Defeats purpose of using real-time communication service
+- ❌ Backend must handle WebSocket state (if used)
 ```
 
 ### 12.2 Read Receipt Flow

@@ -23,6 +23,12 @@ export class AcsChatService {
     eventHandlers?: AcsChatEventHandlers
   ): Promise<void> {
     try {
+      console.log('Initializing ACS chat service...', {
+        hasToken: !!token,
+        endpoint,
+        hasEventHandlers: !!eventHandlers
+      });
+      
       const tokenCredential = new AzureCommunicationTokenCredential(token);
       this.chatClient = new ChatClient(endpoint, tokenCredential);
 
@@ -33,6 +39,7 @@ export class AcsChatService {
 
       // Start real-time notifications
       await this.chatClient.startRealtimeNotifications();
+      console.log('ACS chat service initialized successfully, real-time notifications started');
     } catch (error) {
       console.error('Failed to initialize ACS chat client:', error);
       throw error;

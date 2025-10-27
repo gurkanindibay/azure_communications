@@ -116,10 +116,20 @@ export const AuthProvider: React.FC<{ children: React.ReactNode }> = ({ children
   };
 
   const refreshAcsToken = async () => {
-    if (!user) return;
+    if (!user) {
+      console.log('Cannot refresh ACS token: no user');
+      return;
+    }
 
     try {
+      console.log('Fetching ACS token for user:', user.id);
       const response = await apiService.getAcsToken();
+      console.log('ACS token received:', {
+        hasToken: !!response.token,
+        hasEndpoint: !!response.endpoint,
+        endpoint: response.endpoint,
+        expiresOn: response.expiresOn
+      });
       setAcsToken(response.token);
       // Use the endpoint from the ACS token response
       setAcsEndpoint(response.endpoint);
