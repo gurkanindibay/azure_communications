@@ -121,8 +121,8 @@ export const AuthProvider: React.FC<{ children: React.ReactNode }> = ({ children
     try {
       const response = await apiService.getAcsToken();
       setAcsToken(response.token);
-      // Extract endpoint from the token or use a configured endpoint
-      setAcsEndpoint(import.meta.env.VITE_ACS_ENDPOINT || 'https://your-acs-resource.communication.azure.com/');
+      // Use the endpoint from the ACS token response
+      setAcsEndpoint(response.endpoint);
     } catch (error) {
       console.error('Failed to get ACS token:', error);
     }

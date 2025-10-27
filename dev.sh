@@ -54,6 +54,11 @@ stop_backend() {
     ./backend.sh stop
 }
 
+# Function to stop frontend
+stop_frontend() {
+    ./frontend.sh stop
+}
+
 # Function to stop all services
 stop_all() {
     print_status "Stopping all services..."
