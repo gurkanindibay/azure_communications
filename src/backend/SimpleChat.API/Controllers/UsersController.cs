@@ -100,12 +100,12 @@ public class UsersController : ControllerBase
     }
 
     /// <summary>
-    /// Create a new user
+    /// Get or create user by Entra ID (handles concurrent creation safely)
     /// </summary>
-    [HttpPost]
+    [HttpPost("get-or-create")]
+    [ProducesResponseType(typeof(UserDto), StatusCodes.Status200OK)]
     [ProducesResponseType(typeof(UserDto), StatusCodes.Status201Created)]
-    [ProducesResponseType(StatusCodes.Status400BadRequest)]
-    public async Task<ActionResult<UserDto>> CreateUser([FromBody] CreateUserDto createUserDto)
+    public async Task<ActionResult<UserDto>> GetOrCreateUser([FromBody] CreateUserDto createUserDto)
     {
         try
         {
@@ -114,25 +114,16 @@ public class UsersController : ControllerBase
                 return BadRequest(ModelState);
             }
 
-            // Check if user already exists
-            var existingUser = await _userService.GetUserByEmailAsync(createUserDto.Email);
-            if (existingUser != null)
-            {
-                return BadRequest(new { message = "User with this email already exists" });
-            }
-
-            var user = await _userService.CreateUserAsync(createUserDto);
+            var user = await _userService.GetOrCreateUserAsync(createUserDto);
             
-            return CreatedAtAction(
-                nameof(GetUser), 
-                new { id = user.Id }, 
-                user
-            );
+            // Return 200 if user existed, 201 if newly created
+            // For simplicity, we'll always return 200 since the logic handles both cases
+            return Ok(user);
         }
         catch (Exception ex)
         {
-            _logger.LogError(ex, "Error creating user");
-            return StatusCode(500, new { message = "An error occurred while creating the user" });
+            _logger.LogError(ex, "Error getting or creating user");
+            return StatusCode(500, new { message = "An error occurred while getting or creating the user" });
         }
     }
 

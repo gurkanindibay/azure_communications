@@ -73,30 +73,17 @@ export const AuthProvider: React.FC<{ children: React.ReactNode }> = ({ children
     try {
       setIsLoading(true);
       
-      // Try to get existing user by Entra ID
-      try {
-        const existingUser = await apiService.getUserByEntraId(account.localAccountId);
-        setUser(existingUser);
-        
-        // Update online status
-        await apiService.updateOnlineStatus(existingUser.id, true);
-      } catch (error: any) {
-        console.log('User not found or error fetching user:', error.response?.status);
-        
-        // Only try to create user if it's a 404 (not found)
-        if (error.response?.status === 404) {
-          const newUser = await apiService.createUser({
-            entraIdObjectId: account.localAccountId,
-            email: account.username,
-            displayName: account.name || account.username,
-          });
-          setUser(newUser);
-        } else {
-          // For other errors (like 401), don't try to create user
-          console.error('Error initializing user:', error);
-          throw error;
-        }
-      }
+      // Use the new getOrCreateUser endpoint which handles all the logic safely
+      const user = await apiService.getOrCreateUser({
+        entraIdObjectId: account.localAccountId,
+        email: account.username,
+        displayName: account.name || account.username,
+      });
+      
+      setUser(user);
+      
+      // Update online status
+      await apiService.updateOnlineStatus(user.id, true);
     } catch (error) {
       console.error('Fatal error initializing user:', error);
       // Don't set user if there's an error, but don't prevent loading completion

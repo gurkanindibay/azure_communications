@@ -8,6 +8,7 @@ public interface IUserService
     Task<UserDto?> GetUserByEmailAsync(string email);
     Task<UserDto?> GetUserByEntraIdAsync(string entraIdObjectId);
     Task<UserDto> CreateUserAsync(CreateUserDto createUserDto);
+    Task<UserDto> GetOrCreateUserAsync(CreateUserDto createUserDto);
     Task<UserDto> UpdateUserAsync(Guid userId, UpdateUserDto updateUserDto);
     Task UpdateUserEntraIdAsync(Guid userId, string entraIdObjectId);
     Task<IEnumerable<UserDto>> SearchUsersAsync(string searchTerm);

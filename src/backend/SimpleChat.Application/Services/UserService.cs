@@ -32,6 +32,33 @@ public class UserService : IUserService
         return user == null ? null : MapToDto(user);
     }
 
+    public async Task<UserDto> GetOrCreateUserAsync(CreateUserDto createUserDto)
+    {
+        // First try to get by Entra ID
+        var user = await _unitOfWork.Users.GetByEntraIdAsync(createUserDto.EntraIdObjectId);
+        if (user != null)
+        {
+            return MapToDto(user);
+        }
+
+        // If not found by Entra ID, try by email
+        user = await _unitOfWork.Users.GetByEmailAsync(createUserDto.Email);
+        if (user != null)
+        {
+            // If user exists by email but Entra ID is missing, update it
+            if (string.IsNullOrEmpty(user.EntraIdObjectId))
+            {
+                user.EntraIdObjectId = createUserDto.EntraIdObjectId;
+                await _unitOfWork.Users.UpdateAsync(user);
+                await _unitOfWork.SaveChangesAsync();
+            }
+            return MapToDto(user);
+        }
+
+        // User doesn't exist, create new one
+        return await CreateUserAsync(createUserDto);
+    }
+
     public async Task<UserDto> CreateUserAsync(CreateUserDto createUserDto)
     {
         var user = new User

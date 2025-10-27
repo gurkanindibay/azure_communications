@@ -85,6 +85,11 @@ class ApiService {
     return response.data;
   }
 
+  async getOrCreateUser(user: CreateUserDto): Promise<User> {
+    const response = await this.client.post<User>('/users/get-or-create', user);
+    return response.data;
+  }
+
   async updateUser(userId: string, user: UpdateUserDto): Promise<User> {
     const response = await this.client.put<User>(`/users/${userId}`, user);
     return response.data;
