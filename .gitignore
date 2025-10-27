@@ -75,3 +75,5 @@ azure-resources-config.txt
 appsettings.Development.json
 appsettings.Production.json
 deployment-info.txt
+*.pid
+*.bak
