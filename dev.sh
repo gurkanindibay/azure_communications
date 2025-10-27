@@ -90,20 +90,41 @@ restart_all() {
     print_status "All services restarted"
 }
 
-# Function to stop frontend
-stop_frontend() {
-    ./frontend.sh stop
+# Function to kill database
+kill_database() {
+    print_status "Stopping database containers..."
+    ./database.sh stop
+}
+
+# Function to kill backend
+kill_backend() {
+    ./backend.sh kill
+}
+
+# Function to kill frontend
+kill_frontend() {
+    ./frontend.sh kill
+}
+
+# Function to kill all services
+kill_all() {
+    print_status "Killing all services..."
+    kill_database
+    kill_backend
+    kill_frontend
+    print_status "All services killed"
 }
 
 # Function to show usage
 usage() {
-    echo "Usage: $0 {start|stop|restart|status} {all|database|backend|frontend}"
+    echo "Usage: $0 {start|stop|restart|status|kill} {all|database|backend|frontend}"
     echo ""
     echo "Commands:"
     echo "  start   - Start specified service(s)"
     echo "  stop    - Stop specified service(s)"
     echo "  restart - Restart specified service(s)"
     echo "  status  - Show status of all services"
+    echo "  kill    - Kill all instances of specified service(s)"
     echo ""
     echo "Services:"
     echo "  all      - All services (database, backend, frontend)"
@@ -115,6 +136,7 @@ usage() {
     echo "  $0 start all          # Start all services"
     echo "  $0 stop frontend      # Stop only frontend"
     echo "  $0 restart backend    # Restart only backend"
+    echo "  $0 kill all           # Kill all service instances"
     echo "  $0 status             # Show status of all services"
 }
 
@@ -206,8 +228,28 @@ start)
     status)
         show_status
         ;;
-    *)
-        usage
-        exit 1
+    kill)
+        case "${2:-all}" in
+            all)
+                kill_all
+                show_status
+                ;;
+            database)
+                kill_database
+                show_status
+                ;;
+            backend)
+                kill_backend
+                show_status
+                ;;
+            frontend)
+                kill_frontend
+                show_status
+                ;;
+            *)
+                echo "Usage: $0 kill {all|database|backend|frontend}"
+                exit 1
+                ;;
+        esac
         ;;
 esac
