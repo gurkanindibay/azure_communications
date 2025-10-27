@@ -479,37 +479,24 @@ export const ChatWindow: React.FC<ChatWindowProps> = ({ thread, onMessageSent })
           </Box>
         ) : (
           messages.map((message) => {
-            // Alternative approach: check if sender matches the other user in this thread
-            const isFromOtherUser = thread?.otherUser && (
-              message.senderId === thread.otherUser.id || 
-              message.senderId === thread.otherUser.azureCommunicationUserId
-            );
-            
-            // Fallback: if we can't determine from thread, try direct comparison
-            const fallbackIsOwnMessage = message.senderId === user?.azureCommunicationUserId || message.senderId === user?.id;
+            // In a 1-on-1 chat, every message is either from the current user or the other user
+            // Compare the message sender ACS ID with the current user's ACS ID
+            const isOwnMessage = user?.azureCommunicationUserId && message.senderId === user.azureCommunicationUserId;
             
             console.log('Message ownership check:', {
               messageId: message.id,
               messageSenderId: message.senderId,
               userAcsId: user?.azureCommunicationUserId,
-              userDbId: user?.id,
-              otherUserId: thread?.otherUser?.id,
-              otherUserAcsId: thread?.otherUser?.azureCommunicationUserId,
-              isFromOtherUser,
-              fallbackIsOwnMessage,
-              finalIsOwn: isFromOtherUser ? false : (fallbackIsOwnMessage || true), // Default to own message if unclear
+              isOwnMessage,
               messageContent: message.content?.substring(0, 50)
             });
-            
-            // Use thread-based approach first, fallback to direct comparison
-            const finalIsOwnMessage = isFromOtherUser ? false : (fallbackIsOwnMessage || true);
             
             return (
               <Box
                 key={message.id}
                 sx={{
                   display: 'flex',
-                  justifyContent: finalIsOwnMessage ? 'flex-end' : 'flex-start',
+                  justifyContent: isOwnMessage ? 'flex-end' : 'flex-start',
                 }}
               >
                 <Paper
@@ -517,8 +504,8 @@ export const ChatWindow: React.FC<ChatWindowProps> = ({ thread, onMessageSent })
                   sx={{
                     p: 1.5,
                     maxWidth: '70%',
-                    bgcolor: finalIsOwnMessage ? 'primary.main' : 'grey.100',
-                    color: finalIsOwnMessage ? 'white' : 'text.primary',
+                    bgcolor: isOwnMessage ? 'primary.main' : 'grey.100',
+                    color: isOwnMessage ? 'white' : 'text.primary',
                   }}
                 >
                   <Typography variant="body1">{message.content}</Typography>

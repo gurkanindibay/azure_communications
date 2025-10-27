@@ -146,6 +146,12 @@ export const AuthProvider: React.FC<{ children: React.ReactNode }> = ({ children
       
       setAcsToken(response.token);
       setAcsEndpoint(response.endpoint);
+      
+      // Update the user object with the ACS user ID
+      if (response.acsUserId && user) {
+        setUser(prevUser => prevUser ? { ...prevUser, azureCommunicationUserId: response.acsUserId } : null);
+      }
+      
       console.log('✅ ACS token and endpoint set in context');
     } catch (error) {
       console.error('Failed to get ACS token:', error);
