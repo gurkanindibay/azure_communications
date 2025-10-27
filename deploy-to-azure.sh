@@ -255,11 +255,11 @@ if [ "$BUILD_FRONTEND" = "true" ]; then
   az acr build \
     --registry $ACR_NAME \
     --image simplechat-frontend:latest \
-    --build-arg VITE_API_BASE_URL="http://localhost:8080/api" \
-    --build-arg VITE_API_URL="http://localhost:8080" \
+    --build-arg VITE_API_BASE_URL="/api" \
+    --build-arg VITE_API_URL="" \
     --build-arg VITE_AZURE_AD_CLIENT_ID=$AZURE_AD_CLIENT_ID \
     --build-arg VITE_AZURE_AD_TENANT_ID=$AZURE_AD_TENANT_ID \
-    --build-arg VITE_AZURE_AD_REDIRECT_URI="http://localhost:5173" \
+    --build-arg VITE_AZURE_AD_REDIRECT_URI="${FRONTEND_URL}" \
     .
 else
   echo "Skipping frontend image build (per flags)."
@@ -497,28 +497,43 @@ fi
 
 # Step 11: Rebuild frontend Docker image with correct API URLs
 echo ""
-echo "Step 11: Building and pushing frontend Docker image with correct API URLs..."
-
-cd src/frontend
-if [ "$BUILD_FRONTEND" = "true" ]; then
-  az acr build \
-    --registry $ACR_NAME \
-    --image simplechat-frontend:latest \
-    --build-arg VITE_API_BASE_URL="${FRONTEND_URL}/api" \
-    --build-arg VITE_API_URL="${FRONTEND_URL}" \
-    --build-arg VITE_AZURE_AD_CLIENT_ID=$AZURE_AD_CLIENT_ID \
-    --build-arg VITE_AZURE_AD_TENANT_ID=$AZURE_AD_TENANT_ID \
-    --build-arg VITE_AZURE_AD_REDIRECT_URI="${FRONTEND_URL}" \
-    .
-else
-  echo "Skipping frontend image build (per flags)."
-fi
-cd ../..
+echo "Step 11: Frontend image already built with relative API URLs (runtime-configurable)."
 
 # Step 12: Restart frontend container to pick up new image
 echo ""
-echo "Step 12: Restarting frontend container to pick up new image..."
-az container restart --resource-group $RESOURCE_GROUP --name $FRONTEND_CONTAINER_NAME
+echo "Step 12: Skipping frontend container restart (no rebuild needed)."
+
+# Step 13: Update Azure AD App Registration with SPA redirect URI
+echo ""
+echo "Step 13: Updating Azure AD App Registration 'PgAzureMI' with SPA redirect URI..."
+
+# Get current SPA redirect URIs
+echo "Getting current SPA redirect URIs for app registration..."
+CURRENT_URIS=$(az ad app show --id $AZURE_AD_CLIENT_ID --query spa.redirectUris --output tsv 2>/dev/null || echo "")
+
+# Check if FRONTEND_URL is already in the list
+if echo "$CURRENT_URIS" | grep -q "$FRONTEND_URL"; then
+  echo "SPA redirect URI '$FRONTEND_URL' is already configured. Skipping update."
+else
+  echo "Adding SPA redirect URI '$FRONTEND_URL' to app registration..."
+  
+  # If there are existing URIs, we need to include them
+  if [ -n "$CURRENT_URIS" ]; then
+    # Convert space-separated URIs to JSON array format
+    URI_ARRAY=$(echo "$CURRENT_URIS" | tr '\t' '\n' | jq -R . | jq -s . | jq -c ". + [\"$FRONTEND_URL\"]")
+  else
+    # No existing URIs, create array with just the new one
+    URI_ARRAY="[\"$FRONTEND_URL\"]"
+  fi
+  
+  # Update the app registration with SPA redirect URIs
+  az ad app update \
+    --id $AZURE_AD_CLIENT_ID \
+    --spa-redirect-uris "$URI_ARRAY" \
+    --output table
+  
+  echo "Successfully added SPA redirect URI to Azure AD App Registration 'PgAzureMI'."
+fi
 
 echo ""
 echo "========================================="
@@ -542,9 +557,7 @@ echo "========================================="
 echo "IMPORTANT: Next Steps"
 echo "========================================="
 echo ""
-echo "1. Update Azure AD App Registration:"
-echo "   - Add redirect URI: ${FRONTEND_URL}"
-echo "   - Go to: https://portal.azure.com/#view/Microsoft_AAD_RegisteredApps/ApplicationMenuBlade/~/Authentication/appId/${AZURE_AD_CLIENT_ID}"
+echo "1. Azure AD App Registration 'PgAzureMI' has been automatically updated with the redirect URI."
 echo ""
 echo "2. Test the application:"
 echo "   Open: ${FRONTEND_URL}"

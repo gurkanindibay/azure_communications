@@ -10,7 +10,9 @@ import type {
   PaginationParams 
 } from '../types';
 
-const API_BASE_URL = import.meta.env.VITE_API_BASE_URL || 'http://localhost:5071/api';
+// Use relative API URL since Front Door routes /api/* to backend
+// This makes it runtime-configurable instead of build-time
+const API_BASE_URL = import.meta.env.VITE_API_BASE_URL || '/api';
 
 // Type for token getter function
 type TokenGetter = () => Promise<string | null>;
