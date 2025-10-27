@@ -148,17 +148,40 @@ export class AcsChatService {
     maxPageSize?: number;
     startTime?: Date;
   }): Promise<any[]> {
-    if (!this.chatClient || !this.currentThreadId) return [];
-
-    const chatThreadClient = this.chatClient.getChatThreadClient(this.currentThreadId);
-    const messages = chatThreadClient.listMessages(options);
-
-    const result: any[] = [];
-    for await (const message of messages) {
-      result.push(message);
+    if (!this.chatClient || !this.currentThreadId) {
+      console.warn('Cannot get thread messages: chat client not initialized or no thread');
+      return [];
     }
 
-    return result;
+    try {
+      console.log('Getting messages for thread:', this.currentThreadId);
+      
+      // Ensure we're joined to the thread first
+      await this.joinThread(this.currentThreadId);
+      
+      const chatThreadClient = this.chatClient.getChatThreadClient(this.currentThreadId);
+      const messages = chatThreadClient.listMessages(options);
+
+      const result: any[] = [];
+      let count = 0;
+      for await (const message of messages) {
+        console.log(`Message ${++count}:`, {
+          id: message.id,
+          sender: (message.sender as any)?.communicationUserId,
+          senderDisplayName: message.senderDisplayName,
+          content: message.content?.message,
+          createdOn: message.createdOn,
+          type: message.type
+        });
+        result.push(message);
+      }
+
+      console.log(`Total messages retrieved: ${result.length}`);
+      return result;
+    } catch (error) {
+      console.error('Error getting thread messages:', error);
+      return [];
+    }
   }
 
   dispose(): void {

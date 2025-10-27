@@ -44,12 +44,12 @@ export const ChatWindow: React.FC<ChatWindowProps> = ({ thread, onMessageSent })
 
   // Handle incoming messages from ACS
   const handleMessageReceived = useCallback((event: any) => {
-    console.log('New message received via ACS:', event);
+    console.log('🔥 New message received via ACS:', event);
     console.log('Event details:', {
       messageId: event.id,
       senderId: event.sender?.communicationUserId,
       senderDisplayName: event.senderDisplayName,
-      content: event.message,
+      content: event.content?.message,
       threadId: event.threadId,
       currentThreadId: thread?.azureCommunicationThreadId,
       currentUserId: user?.id,
@@ -61,11 +61,18 @@ export const ChatWindow: React.FC<ChatWindowProps> = ({ thread, onMessageSent })
       id: event.id,
       chatThreadId: event.threadId,
       senderId: event.sender?.communicationUserId || event.senderDisplayName, // ACS user ID
-      content: event.message,
+      content: event.content?.message || '',
       type: MessageType.Text,
       sentAt: event.createdOn || new Date().toISOString(),
       isDeleted: false,
     };
+    
+    console.log('Converted message:', {
+      id: message.id,
+      senderId: message.senderId,
+      content: message.content,
+      threadId: message.chatThreadId
+    });
     
     console.log('Checking thread match:', {
       hasThread: !!thread,
@@ -97,7 +104,12 @@ export const ChatWindow: React.FC<ChatWindowProps> = ({ thread, onMessageSent })
         }
         
         console.log('✅ Adding new message to UI:', message);
-        return [...prev, message];
+        
+        // Insert message in chronological order (oldest first)
+        const newMessages = [...prev, message];
+        newMessages.sort((a, b) => new Date(a.sentAt).getTime() - new Date(b.sentAt).getTime());
+        
+        return newMessages;
       });
       
       // Mark as read if it's not from the current user (compare ACS user IDs)
@@ -135,6 +147,7 @@ export const ChatWindow: React.FC<ChatWindowProps> = ({ thread, onMessageSent })
     error: acsError,
     initializeChat,
     sendMessage: acsSendMessage,
+    getThreadMessages,
   } = useAcsChat({
     threadId: thread?.azureCommunicationThreadId,
     onMessageReceived: handleMessageReceived,
@@ -173,12 +186,24 @@ export const ChatWindow: React.FC<ChatWindowProps> = ({ thread, onMessageSent })
     });
     
     if (thread) {
-      loadMessages();
+      // If ACS is already connected, load messages immediately
+      if (acsConnected && thread.azureCommunicationThreadId) {
+        loadMessages();
+      }
       markAsRead();
     } else {
       setMessages([]);
     }
   }, [thread?.id]); // Only depend on thread ID
+
+  // Load messages when ACS connection is established
+  useEffect(() => {
+    if (thread && acsConnected && thread.azureCommunicationThreadId) {
+      console.log('ACS connected, loading messages...');
+      // Small delay to ensure thread join completes
+      setTimeout(() => loadMessages(), 500);
+    }
+  }, [acsConnected, thread?.azureCommunicationThreadId]);
 
   useEffect(() => {
     scrollToBottom();
@@ -187,12 +212,97 @@ export const ChatWindow: React.FC<ChatWindowProps> = ({ thread, onMessageSent })
   const loadMessages = async () => {
     if (!thread) return;
 
+    console.log('Loading messages for thread:', {
+      threadId: thread.id,
+      acsThreadId: thread.azureCommunicationThreadId,
+      acsConnected,
+      thread: thread
+    });
+
     try {
       setLoading(true);
+
+      // Try to load messages directly from ACS first (fastest and most reliable)
+      if (acsConnected && thread.azureCommunicationThreadId) {
+        console.log('Loading messages from ACS...');
+        try {
+          const acsMessages = await getThreadMessages();
+          
+          console.log('Raw ACS messages received:', acsMessages);
+          console.log('Loaded messages from ACS:', {
+            count: acsMessages.length,
+            messages: acsMessages.map((m: any) => ({
+              id: m.id,
+              senderId: (m.sender as any)?.communicationUserId,
+              senderDisplayName: m.senderDisplayName,
+              content: m.content?.message,
+              sentAt: m.createdOn,
+              type: m.type
+            }))
+          });
+
+          if (acsMessages.length === 0) {
+            console.log('No messages from ACS, trying backend fallback...');
+            throw new Error('No messages from ACS');
+          }
+
+          // Convert ACS messages to our Message format
+          const convertedMessages: Message[] = acsMessages.map((acsMsg: any) => {
+            const senderId = (acsMsg.sender as any)?.communicationUserId || acsMsg.senderDisplayName || '';
+            const message: Message = {
+              id: acsMsg.id,
+              chatThreadId: thread.azureCommunicationThreadId || '',
+              senderId: senderId,
+              content: acsMsg.content?.message || '',
+              type: MessageType.Text,
+              sentAt: acsMsg.createdOn?.toISOString() || new Date().toISOString(),
+              isDeleted: acsMsg.deletedOn !== undefined,
+            };
+            
+            console.log('Converted ACS message:', {
+              id: message.id,
+              senderId: message.senderId,
+              rawSender: acsMsg.sender,
+              senderDisplayName: acsMsg.senderDisplayName,
+              content: message.content?.substring(0, 50)
+            });
+            
+            return message;
+          });
+
+          // Sort messages by timestamp (oldest first)
+          convertedMessages.sort((a, b) => new Date(a.sentAt).getTime() - new Date(b.sentAt).getTime());
+
+          setMessages(convertedMessages);
+          return;
+        } catch (acsError) {
+          console.warn('Failed to load messages from ACS, falling back to backend:', acsError);
+        }
+      }
+
+      // Fallback to backend API if ACS not available or failed
+      console.log('Loading messages from backend API...');
       const threadMessages = await apiService.getThreadMessages(thread.id);
+      
+      console.log('Loaded messages from API:', {
+        count: threadMessages.length,
+        messages: threadMessages.map(m => ({
+          id: m.id,
+          senderId: m.senderId,
+          content: m.content,
+          sentAt: m.sentAt
+        }))
+      });
+      
+      // Sort messages by timestamp (oldest first)
+      threadMessages.sort((a, b) => new Date(a.sentAt).getTime() - new Date(b.sentAt).getTime());
+      
       setMessages(threadMessages);
     } catch (error) {
       console.error('Error loading messages:', error);
+      // Show error to user
+      const errorMessage = error instanceof Error ? error.message : 'Failed to load messages';
+      console.error('Message loading error:', errorMessage);
     } finally {
       setLoading(false);
     }
@@ -246,14 +356,12 @@ export const ChatWindow: React.FC<ChatWindowProps> = ({ thread, onMessageSent })
         isDeleted: false,
       };
       
-      setMessages((prev) => {
-        // Avoid duplicates by checking if message already exists
-        const exists = prev.some((m) => m.id === messageId);
-        if (!exists) {
-          console.log('Adding optimistic message to UI:', optimisticMessage);
-          return [...prev, optimisticMessage];
-        }
-        return prev;
+      console.log('Optimistic message:', {
+        id: optimisticMessage.id,
+        senderId: optimisticMessage.senderId,
+        userAcsId: user?.azureCommunicationUserId,
+        userDbId: user?.id,
+        content: optimisticMessage.content
       });
       
       setNewMessage('');
@@ -371,15 +479,37 @@ export const ChatWindow: React.FC<ChatWindowProps> = ({ thread, onMessageSent })
           </Box>
         ) : (
           messages.map((message) => {
-            // Compare ACS user IDs since message.senderId is from ACS, fallback to DB ID
-            const isOwnMessage = message.senderId === user?.azureCommunicationUserId || message.senderId === user?.id;
+            // Alternative approach: check if sender matches the other user in this thread
+            const isFromOtherUser = thread?.otherUser && (
+              message.senderId === thread.otherUser.id || 
+              message.senderId === thread.otherUser.azureCommunicationUserId
+            );
+            
+            // Fallback: if we can't determine from thread, try direct comparison
+            const fallbackIsOwnMessage = message.senderId === user?.azureCommunicationUserId || message.senderId === user?.id;
+            
+            console.log('Message ownership check:', {
+              messageId: message.id,
+              messageSenderId: message.senderId,
+              userAcsId: user?.azureCommunicationUserId,
+              userDbId: user?.id,
+              otherUserId: thread?.otherUser?.id,
+              otherUserAcsId: thread?.otherUser?.azureCommunicationUserId,
+              isFromOtherUser,
+              fallbackIsOwnMessage,
+              finalIsOwn: isFromOtherUser ? false : (fallbackIsOwnMessage || true), // Default to own message if unclear
+              messageContent: message.content?.substring(0, 50)
+            });
+            
+            // Use thread-based approach first, fallback to direct comparison
+            const finalIsOwnMessage = isFromOtherUser ? false : (fallbackIsOwnMessage || true);
             
             return (
               <Box
                 key={message.id}
                 sx={{
                   display: 'flex',
-                  justifyContent: isOwnMessage ? 'flex-end' : 'flex-start',
+                  justifyContent: finalIsOwnMessage ? 'flex-end' : 'flex-start',
                 }}
               >
                 <Paper
@@ -387,8 +517,8 @@ export const ChatWindow: React.FC<ChatWindowProps> = ({ thread, onMessageSent })
                   sx={{
                     p: 1.5,
                     maxWidth: '70%',
-                    bgcolor: isOwnMessage ? 'primary.main' : 'grey.100',
-                    color: isOwnMessage ? 'white' : 'text.primary',
+                    bgcolor: finalIsOwnMessage ? 'primary.main' : 'grey.100',
+                    color: finalIsOwnMessage ? 'white' : 'text.primary',
                   }}
                 >
                   <Typography variant="body1">{message.content}</Typography>
