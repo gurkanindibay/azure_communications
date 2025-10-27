@@ -126,13 +126,27 @@ export const AuthProvider: React.FC<{ children: React.ReactNode }> = ({ children
       const response = await apiService.getAcsToken();
       console.log('ACS token received:', {
         hasToken: !!response.token,
+        tokenLength: response.token?.length,
+        tokenPreview: response.token?.substring(0, 50) + '...',
         hasEndpoint: !!response.endpoint,
         endpoint: response.endpoint,
-        expiresOn: response.expiresOn
+        expiresOn: response.expiresOn,
+        acsUserId: response.acsUserId
       });
+      
+      if (!response.token) {
+        console.error('❌ No ACS token received from backend');
+        return;
+      }
+      
+      if (!response.endpoint) {
+        console.error('❌ No ACS endpoint received from backend');
+        return;
+      }
+      
       setAcsToken(response.token);
-      // Use the endpoint from the ACS token response
       setAcsEndpoint(response.endpoint);
+      console.log('✅ ACS token and endpoint set in context');
     } catch (error) {
       console.error('Failed to get ACS token:', error);
     }

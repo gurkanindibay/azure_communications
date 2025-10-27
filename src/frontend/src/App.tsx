@@ -1,4 +1,4 @@
-import React from 'react';
+import React, { useEffect, useState } from 'react';
 import { BrowserRouter as Router, Routes, Route, Navigate } from 'react-router-dom';
 import { MsalProvider } from '@azure/msal-react';
 import { PublicClientApplication } from '@azure/msal-browser';
@@ -51,6 +51,29 @@ const AppRoutes: React.FC = () => {
 };
 
 function App() {
+  const [msalInitialized, setMsalInitialized] = useState(false);
+
+  useEffect(() => {
+    const initializeMsal = async () => {
+      try {
+        console.log('Initializing MSAL instance...');
+        await msalInstance.initialize();
+        console.log('✅ MSAL initialized successfully');
+        setMsalInitialized(true);
+      } catch (error) {
+        console.error('❌ Failed to initialize MSAL:', error);
+        // Still set to true to allow app to render, but MSAL features may not work
+        setMsalInitialized(true);
+      }
+    };
+
+    initializeMsal();
+  }, []);
+
+  if (!msalInitialized) {
+    return <div>Initializing authentication...</div>;
+  }
+
   return (
     <MsalProvider instance={msalInstance}>
       <ThemeProvider theme={theme}>

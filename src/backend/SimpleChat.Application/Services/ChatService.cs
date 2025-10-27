@@ -98,6 +98,7 @@ public class ChatService : IChatService
         return new ChatThreadDetailDto
         {
             Id = thread.Id,
+            AzureCommunicationThreadId = thread.AzureCommunicationThreadId,
             User1 = MapToUserDto(thread.User1),
             User2 = MapToUserDto(thread.User2),
             Messages = thread.Messages
@@ -208,6 +209,7 @@ public class ChatService : IChatService
         return new ChatThreadDto
         {
             Id = thread.Id,
+            AzureCommunicationThreadId = thread.AzureCommunicationThreadId,
             OtherUser = MapToUserDto(otherUser),
             LastMessage = lastMessage != null ? MapToMessageDto(lastMessage, currentUserId) : null,
             UnreadCount = unreadCount,

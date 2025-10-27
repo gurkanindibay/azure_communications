@@ -25,23 +25,44 @@ export class AcsChatService {
     try {
       console.log('Initializing ACS chat service...', {
         hasToken: !!token,
+        tokenLength: token?.length,
         endpoint,
         hasEventHandlers: !!eventHandlers
       });
       
+      if (!token) {
+        throw new Error('ACS token is required');
+      }
+      
+      if (!endpoint) {
+        throw new Error('ACS endpoint is required');
+      }
+      
       const tokenCredential = new AzureCommunicationTokenCredential(token);
       this.chatClient = new ChatClient(endpoint, tokenCredential);
 
+      // Start real-time notifications FIRST before setting up event handlers
+      console.log('Starting real-time notifications...');
+      await this.chatClient.startRealtimeNotifications();
+      console.log('Real-time notifications started successfully');
+
+      // NOW set up event handlers after notifications are started
       if (eventHandlers) {
         this.eventHandlers = eventHandlers;
         this.setupEventHandlers();
+        console.log('Event handlers registered');
       }
 
-      // Start real-time notifications
-      await this.chatClient.startRealtimeNotifications();
-      console.log('ACS chat service initialized successfully, real-time notifications started');
+      console.log('✅ ACS chat service initialized successfully');
     } catch (error) {
-      console.error('Failed to initialize ACS chat client:', error);
+      console.error('❌ Failed to initialize ACS chat client:', error);
+      if (error instanceof Error) {
+        console.error('Error details:', {
+          message: error.message,
+          name: error.name,
+          stack: error.stack
+        });
+      }
       throw error;
     }
   }

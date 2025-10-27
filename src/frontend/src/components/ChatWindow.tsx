@@ -49,7 +49,7 @@ export const ChatWindow: React.FC<ChatWindowProps> = ({ thread, onMessageSent })
     // Convert ACS message to our Message format
     const message: Message = {
       id: event.message.id,
-      chatThreadId: thread?.id || '',
+      chatThreadId: thread?.azureCommunicationThreadId || '',
       senderId: event.sender.id,
       content: event.message.content.message,
       type: MessageType.Text,
@@ -58,7 +58,7 @@ export const ChatWindow: React.FC<ChatWindowProps> = ({ thread, onMessageSent })
     };
     
     // Only add the message if it belongs to the current thread
-    if (thread && message.chatThreadId === thread.id) {
+    if (thread && message.chatThreadId === thread.azureCommunicationThreadId) {
       setMessages((prev) => {
         // Avoid duplicates by checking if message already exists
         const exists = prev.some((m) => m.id === message.id);
@@ -95,15 +95,24 @@ export const ChatWindow: React.FC<ChatWindowProps> = ({ thread, onMessageSent })
     initializeChat,
     sendMessage: acsSendMessage,
   } = useAcsChat({
-    threadId: thread?.id,
+    threadId: thread?.azureCommunicationThreadId,
     onMessageReceived: handleMessageReceived,
   });
 
   // Initialize ACS connection once when token is available
   useEffect(() => {
+    console.log('ChatWindow: ACS initialization check', {
+      acsConnected,
+      acsConnecting,
+      hasAcsToken: !!acsToken,
+      hasAcsEndpoint: !!acsEndpoint,
+      initAttempted: initAttemptedRef.current
+    });
+    
     if (!acsConnected && !acsConnecting && acsToken && acsEndpoint && !initAttemptedRef.current) {
-      console.log('Initializing ACS connection...', { 
+      console.log('ChatWindow: Starting ACS initialization...', { 
         hasToken: !!acsToken, 
+        tokenLength: acsToken?.length,
         endpoint: acsEndpoint 
       });
       initAttemptedRef.current = true; // Mark that we've attempted initialization
