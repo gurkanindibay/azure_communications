@@ -147,8 +147,8 @@ export const AuthProvider: React.FC<{ children: React.ReactNode }> = ({ children
       setAcsToken(response.token);
       setAcsEndpoint(response.endpoint);
       
-      // Update the user object with the ACS user ID
-      if (response.acsUserId && user) {
+      // Update the user object with the ACS user ID only if it's not already set
+      if (response.acsUserId && user && !user.azureCommunicationUserId) {
         setUser(prevUser => prevUser ? { ...prevUser, azureCommunicationUserId: response.acsUserId } : null);
       }
       
