@@ -45,33 +45,74 @@ export const ChatWindow: React.FC<ChatWindowProps> = ({ thread, onMessageSent })
   // Handle incoming messages from ACS
   const handleMessageReceived = useCallback((event: any) => {
     console.log('New message received via ACS:', event);
+    console.log('Event details:', {
+      messageId: event.id,
+      senderId: event.sender?.communicationUserId,
+      senderDisplayName: event.senderDisplayName,
+      content: event.message,
+      threadId: event.threadId,
+      currentThreadId: thread?.azureCommunicationThreadId,
+      currentUserId: user?.id,
+      currentUserAcsId: user?.azureCommunicationUserId
+    });
     
     // Convert ACS message to our Message format
     const message: Message = {
-      id: event.message.id,
-      chatThreadId: thread?.azureCommunicationThreadId || '',
-      senderId: event.sender.id,
-      content: event.message.content.message,
+      id: event.id,
+      chatThreadId: event.threadId,
+      senderId: event.sender?.communicationUserId || event.senderDisplayName, // ACS user ID
+      content: event.message,
       type: MessageType.Text,
-      sentAt: event.message.createdOn,
+      sentAt: event.createdOn || new Date().toISOString(),
       isDeleted: false,
     };
     
-    // Only add the message if it belongs to the current thread
-    if (thread && message.chatThreadId === thread.azureCommunicationThreadId) {
+    console.log('Checking thread match:', {
+      hasThread: !!thread,
+      eventThreadId: event.threadId,
+      currentThreadId: thread?.azureCommunicationThreadId,
+      match: event.threadId === thread?.azureCommunicationThreadId
+    });
+    
+    // Check if this message belongs to the current thread
+    // If we don't have a thread loaded yet, but this is our message (sender matches current user), add it anyway
+    const isCurrentThread = thread && event.threadId === thread.azureCommunicationThreadId;
+    const isOwnMessage = user && (message.senderId === user.azureCommunicationUserId || message.senderId === user.id);
+    
+    console.log('Message ownership check:', {
+      messageSenderId: message.senderId,
+      userAcsId: user?.azureCommunicationUserId,
+      userDbId: user?.id,
+      isOwnMessage
+    });
+    
+    // Accept message if it's for the current thread OR if it's our own message (for optimistic updates)
+    if (isCurrentThread || isOwnMessage) {
       setMessages((prev) => {
         // Avoid duplicates by checking if message already exists
         const exists = prev.some((m) => m.id === message.id);
-        if (exists) return prev;
+        if (exists) {
+          console.log('Message already exists, skipping:', message.id);
+          return prev;
+        }
         
+        console.log('✅ Adding new message to UI:', message);
         return [...prev, message];
       });
       
-      // Mark as read if it's not from the current user
-      if (user && message.senderId !== user.id) {
+      // Mark as read if it's not from the current user (compare ACS user IDs)
+      if (user && message.senderId !== user.azureCommunicationUserId) {
         // Debounce mark as read to avoid excessive API calls
-        debouncedMarkAsRead(thread.id, user.id);
+        debouncedMarkAsRead(thread?.id || '', user.id);
       }
+    } else {
+      console.log('❌ Message not added - thread mismatch or no thread', {
+        hasThread: !!thread,
+        threadAcsId: thread?.azureCommunicationThreadId,
+        eventThreadId: event.threadId,
+        isOwnMessage,
+        isCurrentThread
+      });
     }
   }, [thread, user]);
 
@@ -99,29 +140,38 @@ export const ChatWindow: React.FC<ChatWindowProps> = ({ thread, onMessageSent })
     onMessageReceived: handleMessageReceived,
   });
 
-  // Initialize ACS connection once when token is available
+  // Initialize ACS connection once when token is available and thread is selected
   useEffect(() => {
     console.log('ChatWindow: ACS initialization check', {
       acsConnected,
       acsConnecting,
       hasAcsToken: !!acsToken,
       hasAcsEndpoint: !!acsEndpoint,
+      hasThread: !!thread,
       initAttempted: initAttemptedRef.current
     });
     
-    if (!acsConnected && !acsConnecting && acsToken && acsEndpoint && !initAttemptedRef.current) {
+    if (!acsConnected && !acsConnecting && acsToken && acsEndpoint && thread && !initAttemptedRef.current) {
       console.log('ChatWindow: Starting ACS initialization...', { 
         hasToken: !!acsToken, 
         tokenLength: acsToken?.length,
-        endpoint: acsEndpoint 
+        endpoint: acsEndpoint,
+        threadId: thread.azureCommunicationThreadId
       });
       initAttemptedRef.current = true; // Mark that we've attempted initialization
       initializeChat(acsToken, acsEndpoint);
     }
-  }, [acsToken, acsEndpoint, acsConnected, acsConnecting]); // Don't include initializeChat to avoid loop
+  }, [acsToken, acsEndpoint, acsConnected, acsConnecting, thread]); // Include thread in dependencies
 
   // Load messages when thread changes
   useEffect(() => {
+    console.log('Thread changed:', {
+      hasThread: !!thread,
+      threadId: thread?.id,
+      acsThreadId: thread?.azureCommunicationThreadId,
+      fullThread: thread
+    });
+    
     if (thread) {
       loadMessages();
       markAsRead();
@@ -184,6 +234,28 @@ export const ChatWindow: React.FC<ChatWindowProps> = ({ thread, onMessageSent })
       }
       
       console.log('Message sent successfully:', messageId);
+      
+      // Optimistically add the message to UI immediately to avoid race conditions
+      const optimisticMessage: Message = {
+        id: messageId,
+        chatThreadId: thread.azureCommunicationThreadId || '',
+        senderId: user?.azureCommunicationUserId || user?.id || '', // Use ACS ID if available, fallback to DB ID
+        content: newMessage.trim(),
+        type: MessageType.Text,
+        sentAt: new Date().toISOString(),
+        isDeleted: false,
+      };
+      
+      setMessages((prev) => {
+        // Avoid duplicates by checking if message already exists
+        const exists = prev.some((m) => m.id === messageId);
+        if (!exists) {
+          console.log('Adding optimistic message to UI:', optimisticMessage);
+          return [...prev, optimisticMessage];
+        }
+        return prev;
+      });
+      
       setNewMessage('');
       onMessageSent?.();
     } catch (error) {
@@ -299,7 +371,8 @@ export const ChatWindow: React.FC<ChatWindowProps> = ({ thread, onMessageSent })
           </Box>
         ) : (
           messages.map((message) => {
-            const isOwnMessage = message.senderId === user?.id;
+            // Compare ACS user IDs since message.senderId is from ACS, fallback to DB ID
+            const isOwnMessage = message.senderId === user?.azureCommunicationUserId || message.senderId === user?.id;
             
             return (
               <Box
