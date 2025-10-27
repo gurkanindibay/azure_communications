@@ -29,23 +29,64 @@ azure_communications/
 
 ## Getting Started
 
-### 1. Start the Database
+### Quick Setup (Recommended)
 
-Start the SQL Server container using Docker Compose:
+Run the automated setup script:
+
+```bash
+# Make script executable (if not already)
+chmod +x setup-dev.sh
+
+# Run setup
+./setup-dev.sh
+```
+
+This script will:
+- Check prerequisites (.NET, Node.js, Docker)
+- Configure User Secrets for secure credential storage
+- Start the database
+- Run initial migrations
+
+### Manual Setup
+
+If you prefer to set up manually:
+
+#### 1. Start the Database
 
 ```bash
 docker-compose up -d
 ```
 
-Verify the database is running:
+#### 2. Configure Secrets Securely
+
+**For Local Development (User Secrets):**
 
 ```bash
-docker ps
+cd src/backend/SimpleChat.API
+
+# Initialize user secrets
+dotnet user-secrets init
+
+# Set your secrets
+dotnet user-secrets set "AzureCommunicationServices:ConnectionString" "your_acs_connection_string"
+dotnet user-secrets set "AzureAd:TenantId" "your_tenant_id"
+dotnet user-secrets set "AzureAd:ClientId" "your_client_id"
 ```
 
-You should see `simplechat-sqlserver` container running.
+**For Production (Environment Variables):**
 
-### 2. Configure Azure Services
+```bash
+export AzureCommunicationServices__ConnectionString="your_acs_connection_string"
+export AzureAd__TenantId="your_tenant_id"
+export AzureAd__ClientId="your_client_id"
+```
+
+#### 3. Run Database Migrations
+
+```bash
+cd src/backend/SimpleChat.API
+dotnet ef database update --project ../SimpleChat.Infrastructure --startup-project .
+```
 
 #### Create Azure Communication Services Resource
 
@@ -83,20 +124,50 @@ az communication list-key \
 
 #### Update Configuration
 
-Update `.env.local` file with your Azure credentials:
+**⚠️ IMPORTANT: Never commit secrets to version control!**
 
-```env
-ACS_CONNECTION_STRING=your_acs_connection_string_here
-ENTRA_TENANT_ID=your_tenant_id_here
-ENTRA_CLIENT_ID=your_client_id_here
-ENTRA_CLIENT_SECRET=your_client_secret_here
+Choose one of the following secure configuration methods:
+
+**Option 1: User Secrets (Recommended for .NET developers):**
+
+```bash
+cd src/backend/SimpleChat.API
+
+# Initialize user secrets (only needed once)
+dotnet user-secrets init
+
+# Set secrets
+dotnet user-secrets set "AzureCommunicationServices:ConnectionString" "your_acs_connection_string_here"
+dotnet user-secrets set "AzureAd:TenantId" "your_tenant_id_here"
+dotnet user-secrets set "AzureAd:ClientId" "your_client_id_here"
+dotnet user-secrets set "ConnectionStrings:DefaultConnection" "your_database_connection_string_here"
 ```
 
-Also update `src/backend/SimpleChat.API/appsettings.json`:
-- Replace `your-tenant-id-here` with your Tenant ID
-- Replace `your-client-id-here` with your Client ID
-- Replace `your-client-secret-here` with your Client Secret
-- Replace `your-acs-connection-string-here` with your ACS connection string
+**Option 2: Local Configuration File (Alternative):**
+
+```bash
+cd src/backend/SimpleChat.API
+
+# Copy the template and fill in your values
+cp appsettings.template.json appsettings.Local.json
+
+# Edit appsettings.Local.json with your actual values
+# This file is gitignored and won't be committed
+```
+
+**Option 3: Environment Variables (For production or CI/CD):**
+
+```bash
+export AzureCommunicationServices__ConnectionString="your_acs_connection_string_here"
+export AzureAd__TenantId="your_tenant_id_here"
+export AzureAd__ClientId="your_client_id_here"
+export ConnectionStrings__DefaultConnection="your_database_connection_string_here"
+```
+
+**Setup Instructions:**
+1. Copy `appsettings.template.json` to `appsettings.json` (this file is gitignored)
+2. Fill in your actual values for local development
+3. For production, use environment variables or Key Vault
 
 ### 3. Run Database Migrations
 

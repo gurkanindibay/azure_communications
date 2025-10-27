@@ -74,6 +74,8 @@ Thumbs.db
 azure-resources-config.txt
 appsettings.Development.json
 appsettings.Production.json
+appsettings.Local.json
+appsettings.json
 deployment-info.txt
 *.pid
 *.bak

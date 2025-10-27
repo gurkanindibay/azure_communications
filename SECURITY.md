@@ -2,6 +2,48 @@
 
 This document outlines the security measures implemented in the SimpleChat API.
 
+## 🔐 Secret Management
+
+### Never Commit Secrets
+
+**❌ NEVER commit sensitive information to version control:**
+
+- Azure Communication Services connection strings
+- Azure AD client secrets
+- Database passwords
+- API keys and tokens
+
+### Local Development
+
+Choose one of these secure methods:
+
+**User Secrets (Recommended):**
+```bash
+dotnet user-secrets set "AzureCommunicationServices:ConnectionString" "your_connection_string"
+```
+
+**Local Configuration File:**
+```bash
+cp appsettings.template.json appsettings.Local.json
+# Edit appsettings.Local.json with your values (file is gitignored)
+```
+
+### Production
+
+Use **Azure Key Vault** for production secrets:
+
+1. Store secrets in Azure Key Vault
+2. Configure application to read from Key Vault
+3. Use Managed Identity for authentication
+
+### Configuration Files
+
+- `appsettings.json` - Base config with placeholders (committed)
+- `appsettings.Development.json` - Development secrets (gitignored)
+- `appsettings.Production.json` - Production config (gitignored)
+- `appsettings.Local.json` - Local development config (gitignored)
+- `appsettings.template.json` - Template for new developers (committed)
+
 ## 🔐 Authentication & Authorization
 
 ### Azure AD Integration
