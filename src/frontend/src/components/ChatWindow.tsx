@@ -16,6 +16,18 @@ import { useAuth } from '../contexts/AuthContext';
 import { MessageType } from '../types';
 import { useAcsChat } from '../hooks/useAcsChat';
 
+// Simple debounce utility
+function debounce<T extends (...args: any[]) => any>(
+  func: T,
+  wait: number
+): (...args: Parameters<T>) => void {
+  let timeout: number;
+  return (...args: Parameters<T>) => {
+    clearTimeout(timeout);
+    timeout = setTimeout(() => func(...args), wait);
+  };
+}
+
 interface ChatWindowProps {
   thread: ChatThread | null;
   onMessageSent?: () => void;
@@ -71,10 +83,23 @@ export const ChatWindow: React.FC<ChatWindowProps> = ({ thread, onMessageSent })
       
       // Mark as read if it's not from the current user
       if (user && message.senderId !== user.id) {
-        apiService.markMessagesAsRead(message.chatThreadId, user.id).catch(console.error);
+        // Debounce mark as read to avoid excessive API calls
+        debouncedMarkAsRead(thread.id, user.id);
       }
     }
   }, [thread, user]);
+
+  // Debounced mark as read function
+  const debouncedMarkAsRead = useCallback(
+    debounce(async (threadId: string, userId: string) => {
+      try {
+        await apiService.markMessagesAsRead(threadId, userId);
+      } catch (error) {
+        console.error('Error marking messages as read:', error);
+      }
+    }, 1000), // 1 second debounce
+    []
+  );
 
   // Set up ACS chat connection
   const {
@@ -101,7 +126,7 @@ export const ChatWindow: React.FC<ChatWindowProps> = ({ thread, onMessageSent })
     } else {
       setMessages([]);
     }
-  }, [thread, acsConnected, acsToken, acsEndpoint, getAcsToken, initializeChat]);
+  }, [thread?.id]); // Only depend on thread ID to prevent excessive re-runs
 
   useEffect(() => {
     scrollToBottom();
