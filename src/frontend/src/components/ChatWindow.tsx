@@ -45,15 +45,39 @@ export const ChatWindow: React.FC<ChatWindowProps> = ({ thread, onMessageSent })
   // Handle incoming messages from ACS
   const handleMessageReceived = useCallback((event: any) => {
     console.log('🔥 New message received via ACS:', event);
+    console.log('Full event structure:', JSON.stringify(event, null, 2));
     console.log('Event details:', {
       messageId: event.id,
       senderId: event.sender?.communicationUserId,
       senderDisplayName: event.senderDisplayName,
-      content: event.content?.message,
+      content: event.message?.content?.message,
       threadId: event.threadId,
       currentThreadId: thread?.azureCommunicationThreadId,
       currentUserId: user?.id,
       currentUserAcsId: user?.azureCommunicationUserId
+    });
+    
+    // Try different content extraction approaches
+    let messageContent = '';
+    if (event.message && typeof event.message === 'string') {
+      messageContent = event.message;
+    } else if (event.message?.content?.message) {
+      messageContent = event.message.content.message;
+    } else if (event.content?.message) {
+      messageContent = event.content.message;
+    } else if (event.message?.content) {
+      messageContent = event.message.content;
+    } else if (event.content) {
+      messageContent = event.content;
+    }
+    
+    console.log('Content extraction attempts:', {
+      'event.message (string)': event.message && typeof event.message === 'string' ? event.message : 'not a string',
+      'event.message?.content?.message': event.message?.content?.message,
+      'event.content?.message': event.content?.message,
+      'event.message?.content': event.message?.content,
+      'event.content': event.content,
+      'finalContent': messageContent
     });
     
     // Convert ACS message to our Message format
@@ -61,7 +85,7 @@ export const ChatWindow: React.FC<ChatWindowProps> = ({ thread, onMessageSent })
       id: event.id,
       chatThreadId: event.threadId,
       senderId: event.sender?.communicationUserId || event.senderDisplayName, // ACS user ID
-      content: event.content?.message || '',
+      content: messageContent,
       type: MessageType.Text,
       sentAt: event.createdOn || new Date().toISOString(),
       isDeleted: false,
