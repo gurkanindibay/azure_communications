@@ -10,6 +10,8 @@ using SimpleChat.Infrastructure.Services;
 using AspNetCoreRateLimit;
 using Serilog;
 using System.IdentityModel.Tokens.Jwt;
+using Azure.Identity;
+using Azure.Extensions.AspNetCore.Configuration.Secrets;
 
     // Configure Serilog
     Log.Logger = new LoggerConfiguration()
@@ -22,6 +24,15 @@ using System.IdentityModel.Tokens.Jwt;
         Log.Information("Starting SimpleChat API");
 
         var builder = WebApplication.CreateBuilder(args);
+
+        // Configure Azure Key Vault
+        var keyVaultUri = builder.Configuration["KeyVault:VaultUri"];
+        if (!string.IsNullOrEmpty(keyVaultUri))
+        {
+            builder.Configuration.AddAzureKeyVault(
+                new Uri(keyVaultUri),
+                new DefaultAzureCredential());
+        }
 
         // Configure Serilog
         builder.Host.UseSerilog();    // Add Database Context
